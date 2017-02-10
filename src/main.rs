@@ -1,4 +1,10 @@
 extern crate rand;
+extern crate sdl2;
+
+use sdl2::pixels;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use sdl2::gfx::primitives::DrawRenderer;
 
 #[cfg(not(test))]
 use std::io;
@@ -7,6 +13,7 @@ use std::path::Path;
 
 const DISPLAY_HEIGHT: usize = 32;
 const DISPLAY_WIDTH: usize = 64;
+const PIXEL_SIZE: usize = 20;
 const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
 const NUM_REGISTERS: usize = 16;
 const MEMORY_SIZE: usize = 4096;
@@ -104,11 +111,67 @@ impl Chip8 {
 
     #[cfg(not(test))]
     fn run(&mut self) {
-        loop {
+        let sdl_context = sdl2::init().unwrap();
+        let video_subsys = sdl_context.video().unwrap();
+        let window = video_subsys.window("chip8",
+                    (DISPLAY_WIDTH * PIXEL_SIZE) as u32,
+                    (DISPLAY_HEIGHT * PIXEL_SIZE) as u32)
+            .position_centered()
+            .opengl()
+            .build()
+            .unwrap();
+
+        let mut renderer = window.renderer().build().unwrap();
+        renderer.set_draw_color(pixels::Color::RGB(0, 0, 0));
+        renderer.clear();
+        renderer.present();
+
+        let mut events = sdl_context.event_pump().unwrap();
+
+        'main: loop {
+            for event in events.poll_iter() {
+                match event {
+                    Event::Quit { .. } => break 'main,
+                    Event::KeyDown { keycode: Some(keycode), .. } => {
+                        match keycode {
+                            Keycode::Escape => break 'main,
+                            Keycode::Num0 => self.keys[0] = 1,
+                            Keycode::Num1 => self.keys[1] = 1,
+                            Keycode::Num2 => self.keys[2] = 1,
+                            Keycode::Num3 => self.keys[3] = 1,
+                            Keycode::Num4 => self.keys[4] = 1,
+                            Keycode::Num5 => self.keys[5] = 1,
+                            Keycode::Num6 => self.keys[6] = 1,
+                            Keycode::Num7 => self.keys[7] = 1,
+                            Keycode::Num8 => self.keys[8] = 1,
+                            Keycode::Num9 => self.keys[9] = 1,
+                            _ => {}
+                        }
+                    }
+                    Event::KeyUp { keycode: Some(keycode), .. } => {
+                        match keycode {
+                            Keycode::Num0 => self.keys[0] = 0,
+                            Keycode::Num1 => self.keys[1] = 0,
+                            Keycode::Num2 => self.keys[2] = 0,
+                            Keycode::Num3 => self.keys[3] = 0,
+                            Keycode::Num4 => self.keys[4] = 0,
+                            Keycode::Num5 => self.keys[5] = 0,
+                            Keycode::Num6 => self.keys[6] = 0,
+                            Keycode::Num7 => self.keys[7] = 0,
+                            Keycode::Num8 => self.keys[8] = 0,
+                            Keycode::Num9 => self.keys[9] = 0,
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
             self.cycle();
 
             if self.refresh {
-                self.render();
+                self.render(&mut renderer);
+                renderer.present();
                 self.refresh = false;
             }
 
@@ -117,7 +180,26 @@ impl Chip8 {
         }
     }
 
-    fn render(&self) {}
+    fn render(&self, renderer: &mut sdl2::render::Renderer) {
+        println!("rendering...");
+        for y in 0..DISPLAY_HEIGHT {
+            for x in 0..DISPLAY_WIDTH {
+                let pixel_position = (y * (DISPLAY_HEIGHT)) + x;
+                let pixel = self.reg_gfx[pixel_position] as usize;
+                let color = if self.reg_gfx[pixel] == 0 {
+                    pixels::Color::RGB(0, 255, 0)
+                } else {
+                    pixels::Color::RGB(255, 255, 255)
+                };
+
+                let x0 = (x * PIXEL_SIZE) as i16;
+                let x1 = x0 + PIXEL_SIZE as i16;
+                let y0 = (y * PIXEL_SIZE) as i16;
+                let y1 = y0 + PIXEL_SIZE as i16;
+                let _ = renderer.rectangle(x0, x1, y0, y1, color);
+            }
+        }
+    }
 
     fn load_rom(&mut self, rom: Vec<u8>) {
         for (index, element) in rom.into_iter().enumerate() {
@@ -170,6 +252,8 @@ impl Chip8 {
     }
 
     fn execute_opcode(&mut self, opcode: Opcode) {
+        println!("Executing opcode:{:X}", opcode.opcode);
+
         match opcode.category() {
             0 => {
                 match opcode.get_8bit() {
@@ -244,12 +328,15 @@ impl Chip8 {
                         } else {
                             0
                         };
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] + self.reg_v[opcode.y()];
+
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()]
+                            .wrapping_add(self.reg_v[opcode.y()]);
                         self.program_counter = self.program_counter + 2;
                     }
                     5 => {
                         self.memory[0xF] = if opcode.y() > opcode.x() { 1 } else { 0 };
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] - self.reg_v[opcode.y()];
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()]
+                            .wrapping_sub(self.reg_v[opcode.y()]);
                         self.program_counter = self.program_counter + 2;
                     }
                     6 => {
@@ -259,7 +346,8 @@ impl Chip8 {
                     }
                     7 => {
                         self.memory[0xF] = if opcode.x() > opcode.y() { 1 } else { 0 };
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.y()] - self.reg_v[opcode.x()];
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.y()]
+                            .wrapping_sub(self.reg_v[opcode.x()]);
                         self.program_counter = self.program_counter + 2;
                     }
                     0xE => {
@@ -418,53 +506,21 @@ mod test {
 
     #[test]
     fn instruction_clear_display() {
-        let rom = vec![0x00, 00];
-
-        let mut chip = ::Chip8::new();
-        chip.initialize();
-        chip.load_rom(rom);
-        chip.cycle();
-
-        assert_eq!(chip.program_counter, 0x0202);
+        assert!(false);
     }
 
     #[test]
     fn instruction_call() {
-        let rom = vec![0x22, 0xFC];
-
-        let mut chip = ::Chip8::new();
-        chip.initialize();
-        chip.load_rom(rom);
-        chip.cycle();
-
-        assert_eq!(chip.program_counter, 0x02FC);
-        assert_eq!(chip.stack_pointer, 0x0001);
-        assert_eq!(chip.stack[chip.stack_pointer as usize], 0x200);
+        assert!(false);
     }
 
     #[test]
     fn instruction_return() {
-        let rom = vec![0x22, 0x04, 0x00, 0x00, 0x00, 0xEE];
-
-        let mut chip = ::Chip8::new();
-        chip.initialize();
-        chip.load_rom(rom);
-        chip.cycle();
-        chip.cycle();
-
-        assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.stack_pointer, 0x0000);
+        assert!(false);
     }
 
     #[test]
     fn instruction_jump() {
-        let rom = vec![0x12, 0xFC];
-
-        let mut chip = ::Chip8::new();
-        chip.initialize();
-        chip.load_rom(rom);
-        chip.cycle();
-
-        assert_eq!(chip.program_counter, 0x02FC);
+        assert!(false);
     }
 }

@@ -12,3 +12,6 @@
 /target/
 /.vscode/
 /resources/myChip8-bin-src
+/resources/SDL2_gfx-1.0.1
+/resources/SDL2-2.0.5
+/lib
