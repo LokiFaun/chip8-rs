@@ -225,7 +225,7 @@ impl Chip8 {
     fn execute_opcode(&mut self, opcode: Opcode) {
         match opcode.category {
             0 => {
-                match opcode.get_8bit() {
+                match opcode.byte {
                     0xE0 => {
                         self.clear_screen();
                         self.program_counter = self.program_counter + 2;
@@ -245,14 +245,14 @@ impl Chip8 {
                 self.program_counter = opcode.address;
             }
             3 => {
-                if self.reg_v[opcode.x] == opcode.get_8bit() {
+                if self.reg_v[opcode.x] == opcode.byte {
                     self.program_counter = self.program_counter + 4;
                 } else {
                     self.program_counter = self.program_counter + 2;
                 }
             }
             4 => {
-                if self.reg_v[opcode.x] != opcode.get_8bit() {
+                if self.reg_v[opcode.x] != opcode.byte {
                     self.program_counter = self.program_counter + 4;
                 } else {
                     self.program_counter = self.program_counter + 2;
@@ -266,15 +266,15 @@ impl Chip8 {
                 }
             }
             6 => {
-                self.reg_v[opcode.x] = opcode.get_8bit();
+                self.reg_v[opcode.x] = opcode.byte;
                 self.program_counter = self.program_counter + 2;
             }
             7 => {
-                self.reg_v[opcode.x] = self.reg_v[opcode.x] + opcode.get_8bit();
+                self.reg_v[opcode.x] = self.reg_v[opcode.x] + opcode.byte;
                 self.program_counter = self.program_counter + 2;
             }
             8 => {
-                match opcode.get_4bit() {
+                match opcode.nibble {
                     0 => {
                         self.reg_v[opcode.x] = self.reg_v[opcode.y];
                         self.program_counter = self.program_counter + 2;
@@ -339,15 +339,15 @@ impl Chip8 {
                 self.program_counter = self.program_counter + 2;
             }
             0xC => {
-                self.reg_v[opcode.x] = rand::random::<u8>() & opcode.get_8bit();
+                self.reg_v[opcode.x] = rand::random::<u8>() & opcode.byte;
                 self.program_counter = self.program_counter + 2;
             }
             0xD => {
-                self.display(opcode.x, opcode.y, opcode.get_4bit());
+                self.display(opcode.x, opcode.y, opcode.nibble);
                 self.program_counter = self.program_counter + 2;
             }
             0xE => {
-                match opcode.get_8bit() {
+                match opcode.byte {
                     0x9E => {
                         if self.keys[self.reg_v[opcode.x] as usize] != 0 {
                             self.program_counter = self.program_counter + 4;
@@ -366,7 +366,7 @@ impl Chip8 {
                 }
             }
             0xF => {
-                match opcode.get_8bit() {
+                match opcode.byte {
                     0x07 => {
                         self.reg_v[opcode.x] = self.delay_timer;
                         self.program_counter = self.program_counter + 2;
