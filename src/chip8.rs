@@ -1,17 +1,25 @@
+use super::*;
+
+#[cfg(not(test))]
 use std::time;
+#[cfg(not(test))]
 use std::thread;
 
-use super::*;
+#[cfg(not(test))]
 use sdl2::pixels;
+#[cfg(not(test))]
 use sdl2::event::Event;
+#[cfg(not(test))]
 use sdl2::keyboard::Keycode;
+#[cfg(not(test))]
 use sdl2::gfx::primitives::DrawRenderer;
 
 use opcode::Opcode;
 
+#[cfg(not(test))]
+const PIXEL_SIZE: usize = 20;
 const DISPLAY_HEIGHT: usize = 32;
 const DISPLAY_WIDTH: usize = 64;
-const PIXEL_SIZE: usize = 20;
 const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
 const NUM_REGISTERS: usize = 16;
 const MEMORY_SIZE: usize = 4096;
@@ -150,6 +158,7 @@ impl Chip8 {
         }
     }
 
+    #[cfg(not(test))]
     fn render(&self, renderer: &mut sdl2::render::Renderer) {
         println!("rendering...");
         for y in 0..DISPLAY_HEIGHT {
@@ -431,21 +440,53 @@ mod tests {
 
     #[test]
     fn instruction_clear_display() {
-        assert!(false);
+        let rom = vec![0x00, 0xE0];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
     }
 
     #[test]
     fn instruction_call() {
-        assert!(false);
+        let rom = vec![0x22, 0xFC];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x02FC);
+        assert_eq!(chip.stack_pointer, 0x0001);
+        assert_eq!(chip.stack[chip.stack_pointer as usize], 0x200);
     }
 
     #[test]
     fn instruction_return() {
-        assert!(false);
+        let rom = vec![0x22, 0x04, 0x00, 0x00, 0x00, 0xEE];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.stack_pointer, 0x0000);
     }
 
     #[test]
     fn instruction_jump() {
-        assert!(false);
+        let rom = vec![0x12, 0xFC];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x02FC);
     }
 }
