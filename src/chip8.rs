@@ -11,8 +11,6 @@ use sdl2::pixels;
 use sdl2::event::Event;
 #[cfg(not(test))]
 use sdl2::keyboard::Keycode;
-#[cfg(not(test))]
-use sdl2::gfx::primitives::DrawRenderer;
 
 use opcode::Opcode;
 
@@ -160,7 +158,6 @@ impl Chip8 {
 
     #[cfg(not(test))]
     fn render(&self, renderer: &mut sdl2::render::Renderer) {
-        println!("rendering...");
         for y in 0..DISPLAY_HEIGHT {
             for x in 0..DISPLAY_WIDTH {
                 let pixel_position = (y * (DISPLAY_HEIGHT)) + x;
@@ -171,11 +168,12 @@ impl Chip8 {
                     pixels::Color::RGB(255, 255, 255)
                 };
 
-                let x0 = (x * PIXEL_SIZE) as i16;
-                let x1 = x0 + PIXEL_SIZE as i16;
-                let y0 = (y * PIXEL_SIZE) as i16;
-                let y1 = y0 + PIXEL_SIZE as i16;
-                let _ = renderer.rectangle(x0, x1, y0, y1, color);
+                let rectangle = sdl2::rect::Rect::new((x * PIXEL_SIZE) as i32,
+                                                      (y * PIXEL_SIZE) as i32,
+                                                      PIXEL_SIZE as u32,
+                                                      PIXEL_SIZE as u32);
+                renderer.set_draw_color(color);
+                let _ = renderer.fill_rect(rectangle);
             }
         }
     }
@@ -488,5 +486,31 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x02FC);
+    }
+
+    #[test]
+    fn instruction_jump_equal() {
+        let rom = vec![0x30, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0204);
+    }
+
+    #[test]
+    fn instruction_not_jump_equal() {
+        let rom = vec![0x30, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x14;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
     }
 }
