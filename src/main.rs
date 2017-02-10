@@ -1,13 +1,14 @@
 extern crate rand;
 
-use std::env;
-use std::fs;
+#[cfg(not(test))]
 use std::io;
-use std::io::Read;
+#[cfg(not(test))]
 use std::path::Path;
 
+const DISPLAY_HEIGHT: usize = 32;
+const DISPLAY_WIDTH: usize = 64;
+const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
 const NUM_REGISTERS: usize = 16;
-const GFX_MEMORY_SIZE: usize = 64 * 32;
 const MEMORY_SIZE: usize = 4096;
 const STACK_SIZE: usize = 16;
 const NUM_KEYS: usize = 16;
@@ -31,15 +32,15 @@ impl Opcode {
     }
 
     fn category(&self) -> u8 {
-        (self.opcode & 0xF000 >> 12) as u8
+        ((self.opcode & 0xF000) >> 12) as u8
     }
 
     fn x(&self) -> usize {
-        (self.opcode & 0x0F00 >> 8) as usize
+        ((self.opcode & 0x0F00) >> 8) as usize
     }
 
     fn y(&self) -> usize {
-        (self.opcode & 0x00F0 >> 4) as usize
+        ((self.opcode & 0x00F0) >> 4) as usize
     }
 
     fn address(&self) -> u16 {
@@ -66,6 +67,7 @@ struct Chip8 {
     reg_i: u16,
     delay_timer: u8,
     sound_timer: u8,
+    refresh: bool,
 }
 
 impl Chip8 {
@@ -81,30 +83,41 @@ impl Chip8 {
             reg_i: 0,
             delay_timer: 0,
             sound_timer: 0,
+            refresh: true,
         }
     }
 
     fn initialize(&mut self) {
         self.program_counter = PROGRAM_START as u16;
         self.reg_v = [0; NUM_REGISTERS];
+        self.memory = [0; MEMORY_SIZE];
         self.reg_gfx = [0; GFX_MEMORY_SIZE];
         self.stack = [0; STACK_SIZE];
         self.keys = [0; NUM_KEYS];
         self.stack_pointer = 0;
         self.reg_i = 0;
+        self.refresh = true;
         for (index, element) in FONT_SET.into_iter().enumerate() {
             self.memory[index] = *element;
         }
     }
 
+    #[cfg(not(test))]
     fn run(&mut self) {
         loop {
             self.cycle();
+
+            if self.refresh {
+                self.render();
+                self.refresh = false;
+            }
 
             let duration = std::time::Duration::from_millis(16);
             std::thread::sleep(duration);
         }
     }
+
+    fn render(&self) {}
 
     fn load_rom(&mut self, rom: Vec<u8>) {
         for (index, element) in rom.into_iter().enumerate() {
@@ -114,8 +127,6 @@ impl Chip8 {
 
     fn cycle(&mut self) {
         let opcode = self.fetch_opcode();
-        println!("OpCode={:X}", opcode.opcode);
-
         self.execute_opcode(opcode);
 
         if self.delay_timer > 0 {
@@ -127,145 +138,251 @@ impl Chip8 {
         }
     }
 
-    fn fetch_opcode(&mut self) -> Opcode {
+    fn fetch_opcode(&self) -> Opcode {
         let opcode = ((self.memory[self.program_counter as usize] as u16) << 8) +
                      (self.memory[self.program_counter as usize + 1] as u16);
-        self.program_counter = self.program_counter + 2;
         Opcode::new(opcode)
     }
 
     fn clear_screen(&mut self) {
-        // TODO
+        self.reg_gfx = [0; GFX_MEMORY_SIZE];
+        self.refresh = true;
     }
 
     fn display(&mut self, x: usize, y: usize, height: u8) {
-        // TODO
+        self.reg_v[0xF] = 0x00;
+        self.refresh = true;
+        for y_line in 0..height {
+            let memory_position = (self.reg_i + y_line as u16) as usize;
+            let pixel = self.memory[memory_position];
+            for x_line in 0..8 {
+                if (pixel & (0x80 >> x_line)) != 0x00 {
+                    let gfx_position = x + x_line + ((y + y_line as usize) * DISPLAY_WIDTH);
+                    let current_pixel = self.reg_gfx[gfx_position];
+                    if current_pixel == 0x01 {
+                        self.reg_v[0xF] = 1;
+                    }
+
+                    self.reg_gfx[gfx_position] = self.reg_gfx[gfx_position] ^ 1;
+                }
+            }
+        }
     }
 
     fn execute_opcode(&mut self, opcode: Opcode) {
         match opcode.category() {
             0 => {
                 match opcode.get_8bit() {
-                    0xE0 => self.clear_screen(),
+                    0xE0 => {
+                        self.clear_screen();
+                        self.program_counter = self.program_counter + 2;
+                    }
                     0xEE => {
                         self.program_counter = self.stack[self.stack_pointer as usize];
                         self.stack_pointer = self.stack_pointer - 1;
+                        self.program_counter = self.program_counter + 2;
                     }
-                    _ => {}
+                    _ => panic!("Invalid OpCode"),
                 }
             }
             1 => self.program_counter = opcode.address(),
             2 => {
-                self.stack[self.stack_pointer as usize] = self.program_counter;
                 self.stack_pointer = self.stack_pointer + 1;
+                self.stack[self.stack_pointer as usize] = self.program_counter;
                 self.program_counter = opcode.address();
             }
             3 => {
                 if self.reg_v[opcode.x()] == opcode.get_8bit() {
+                    self.program_counter = self.program_counter + 4;
+                } else {
                     self.program_counter = self.program_counter + 2;
                 }
             }
             4 => {
                 if self.reg_v[opcode.x()] != opcode.get_8bit() {
+                    self.program_counter = self.program_counter + 4;
+                } else {
                     self.program_counter = self.program_counter + 2;
                 }
             }
             5 => {
                 if self.reg_v[opcode.x()] == self.reg_v[opcode.y()] {
+                    self.program_counter = self.program_counter + 4;
+                } else {
                     self.program_counter = self.program_counter + 2;
                 }
             }
-            6 => self.reg_v[opcode.x()] = opcode.get_8bit(),
-            7 => self.reg_v[opcode.x()] = self.reg_v[opcode.x()] + opcode.get_8bit(),
+            6 => {
+                self.reg_v[opcode.x()] = opcode.get_8bit();
+                self.program_counter = self.program_counter + 2;
+            }
+            7 => {
+                self.reg_v[opcode.x()] = self.reg_v[opcode.x()] + opcode.get_8bit();
+                self.program_counter = self.program_counter + 2;
+            }
             8 => {
                 match opcode.get_4bit() {
-                    0 => self.reg_v[opcode.x()] = self.reg_v[opcode.y()],
-                    1 => self.reg_v[opcode.x()] = self.reg_v[opcode.x()] | self.reg_v[opcode.y()],
-                    2 => self.reg_v[opcode.x()] = self.reg_v[opcode.x()] & self.reg_v[opcode.y()],
-                    3 => self.reg_v[opcode.x()] = self.reg_v[opcode.x()] ^ self.reg_v[opcode.y()],
+                    0 => {
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.y()];
+                        self.program_counter = self.program_counter + 2;
+                    }
+                    1 => {
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] | self.reg_v[opcode.y()];
+                        self.program_counter = self.program_counter + 2;
+                    }
+                    2 => {
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] & self.reg_v[opcode.y()];
+                        self.program_counter = self.program_counter + 2;
+                    }
+                    3 => {
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] ^ self.reg_v[opcode.y()];
+                        self.program_counter = self.program_counter + 2;
+                    }
                     4 => {
                         self.memory[0xF] = if opcode.y() > (0xFF - opcode.x()) {
                             1
                         } else {
                             0
                         };
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] + self.reg_v[opcode.y()]
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] + self.reg_v[opcode.y()];
+                        self.program_counter = self.program_counter + 2;
                     }
                     5 => {
                         self.memory[0xF] = if opcode.y() > opcode.x() { 1 } else { 0 };
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] - self.reg_v[opcode.y()]
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] - self.reg_v[opcode.y()];
+                        self.program_counter = self.program_counter + 2;
                     }
                     6 => {
                         self.memory[0xF] = self.reg_v[opcode.x()] & 0x01;
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] >> 1
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] >> 1;
+                        self.program_counter = self.program_counter + 2;
                     }
                     7 => {
                         self.memory[0xF] = if opcode.x() > opcode.y() { 1 } else { 0 };
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.y()] - self.reg_v[opcode.x()]
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.y()] - self.reg_v[opcode.x()];
+                        self.program_counter = self.program_counter + 2;
                     }
                     0xE => {
                         self.memory[0xF] = self.reg_v[opcode.x()] & 0x80;
-                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] << 1
+                        self.reg_v[opcode.x()] = self.reg_v[opcode.x()] << 1;
+                        self.program_counter = self.program_counter + 2;
                     }
-                    _ => {}
+                    _ => panic!("Invalid OpCode"),
                 }
             }
             9 => {
                 if self.reg_v[opcode.x()] != self.reg_v[opcode.y()] {
+                    self.program_counter = self.program_counter + 4;
+                } else {
                     self.program_counter = self.program_counter + 2;
                 }
             }
-            0xA => self.reg_i = opcode.address(),
-            0xB => self.program_counter = opcode.address() + self.reg_v[opcode.x()] as u16,
-            0xC => self.reg_v[opcode.x()] = rand::random::<u8>() & opcode.get_8bit(),
-            0xD => self.display(opcode.x(), opcode.y(), opcode.get_4bit()),
+            0xA => {
+                self.reg_i = opcode.address();
+                self.program_counter = self.program_counter + 2;
+            }
+            0xB => {
+                self.program_counter = opcode.address() + self.reg_v[opcode.x()] as u16;
+                self.program_counter = self.program_counter + 2;
+            }
+            0xC => {
+                self.reg_v[opcode.x()] = rand::random::<u8>() & opcode.get_8bit();
+                self.program_counter = self.program_counter + 2;
+            }
+            0xD => {
+                self.display(opcode.x(), opcode.y(), opcode.get_4bit());
+                self.program_counter = self.program_counter + 2;
+            }
             0xE => {
                 match opcode.get_8bit() {
                     0x9E => {
                         if self.keys[self.reg_v[opcode.x()] as usize] != 0 {
+                            self.program_counter = self.program_counter + 4;
+                        } else {
                             self.program_counter = self.program_counter + 2;
                         }
                     }
                     0xA1 => {
                         if self.keys[self.reg_v[opcode.x()] as usize] == 0 {
+                            self.program_counter = self.program_counter + 4;
+                        } else {
                             self.program_counter = self.program_counter + 2;
                         }
                     }
-                    _ => {}
+                    _ => panic!("Invalid OpCode!"),
                 }
             }
             0xF => {
                 match opcode.get_8bit() {
-                    0x07 => self.reg_v[opcode.x()] = self.delay_timer,
-                    0x0A => {
-                        // TODO
+                    0x07 => {
+                        self.reg_v[opcode.x()] = self.delay_timer;
+                        self.program_counter = self.program_counter + 2;
                     }
-                    0x15 => self.delay_timer = self.reg_v[opcode.x()],
-                    0x18 => self.sound_timer = self.reg_v[opcode.x()],
+                    0x0A => {
+                        for index in 0..NUM_KEYS {
+                            if self.keys[index] != 0x00 {
+                                self.reg_v[opcode.x()] = self.keys[index];
+                                self.program_counter = self.program_counter + 2;
+                                break;
+                            }
+                        }
+                    }
+                    0x15 => {
+                        self.delay_timer = self.reg_v[opcode.x()];
+                        self.program_counter = self.program_counter + 2;
+                    }
+                    0x18 => {
+                        self.sound_timer = self.reg_v[opcode.x()];
+                        self.program_counter = self.program_counter + 2;
+                    }
                     0x1E => {
-                        // TODO
+                        let i = self.reg_i + self.reg_v[opcode.x()] as u16;
+                        if i > 0xFFF {
+                            self.reg_v[0xF] = 1;
+                        } else {
+                            self.reg_v[0xF] = 0;
+                        }
+
+                        self.reg_i = i;
+                        self.program_counter = self.program_counter + 2;
                     }
                     0x29 => {
-                        // TODO
+                        self.reg_i = self.reg_v[opcode.x()] as u16 * 0x5;
+                        self.program_counter = self.program_counter + 2;
                     }
                     0x33 => {
-                        // TODO
+                        let x = self.reg_v[opcode.x()];
+                        self.memory[self.reg_i as usize] = x / 100;
+                        self.memory[(self.reg_i + 1) as usize] = (x / 10) % 10;
+                        self.memory[(self.reg_i + 2) as usize] = x % 100 % 10;
+                        self.program_counter = self.program_counter + 2;
                     }
                     0x55 => {
-                        // TODO
+                        for x in 0..opcode.x() {
+                            self.memory[self.reg_i as usize + x] = self.reg_v[x];
+                        }
+
+                        self.program_counter = self.program_counter + 2;
                     }
                     0x65 => {
-                        // TODO
+                        for x in 0..opcode.x() {
+                            self.reg_v[x] = self.memory[self.reg_i as usize + x];
+                        }
+
+                        self.program_counter = self.program_counter + 2;
                     }
-                    _ => {}
+                    _ => panic!("Invalid OpCode"),
                 }
             }
-            _ => {}
+            _ => panic!("Invalid OpCode"),
         }
     }
 }
 
+#[cfg(not(test))]
 fn main() {
+    use std::env;
+
     if let Some(rom_file_name) = env::args().nth(1) {
         println!("Reading ROM: {}...", rom_file_name);
         let rom = read_rom(rom_file_name).unwrap_or_else(|err| {
@@ -285,9 +402,69 @@ fn main() {
     }
 }
 
+#[cfg(not(test))]
 fn read_rom<P: AsRef<Path>>(path: P) -> io::Result<Vec<u8>> {
+    use std::fs;
+    use std::io::Read;
+
     let mut file = try!(fs::File::open(path));
     let mut file_buffer = Vec::new();
     try!(file.read_to_end(&mut file_buffer));
     Ok(file_buffer)
+}
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn instruction_clear_display() {
+        let rom = vec![0x00, 00];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_call() {
+        let rom = vec![0x22, 0xFC];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x02FC);
+        assert_eq!(chip.stack_pointer, 0x0001);
+        assert_eq!(chip.stack[chip.stack_pointer as usize], 0x200);
+    }
+
+    #[test]
+    fn instruction_return() {
+        let rom = vec![0x22, 0x04, 0x00, 0x00, 0x00, 0xEE];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.stack_pointer, 0x0000);
+    }
+
+    #[test]
+    fn instruction_jump() {
+        let rom = vec![0x12, 0xFC];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x02FC);
+    }
 }
