@@ -229,7 +229,7 @@ impl Chip8 {
                         self.stack_pointer = self.stack_pointer - 1;
                         self.program_counter = self.program_counter + 2;
                     }
-                    _ => panic!("Invalid OpCode"),
+                    _ => {}
                 }
             }
             1 => self.program_counter = opcode.address,
@@ -286,25 +286,18 @@ impl Chip8 {
                         self.program_counter = self.program_counter + 2;
                     }
                     4 => {
-                        self.reg_v[0xF] = if self.reg_v[opcode.y] > (0xFF - self.reg_v[opcode.x]) {
-                            1
-                        } else {
-                            0
-                        };
+                        let x = self.reg_v[opcode.x];
+                        let y = self.reg_v[opcode.y];
+                        self.reg_v[0xF] = ((x as u16 + y as u16) > 0xFF) as u8;
 
-                        self.reg_v[opcode.x] = self.reg_v[opcode.x]
-                            .wrapping_add(self.reg_v[opcode.y]);
+                        self.reg_v[opcode.x] = x.wrapping_add(y);
                         self.program_counter = self.program_counter + 2;
                     }
                     5 => {
-                        self.reg_v[0xF] = if self.reg_v[opcode.y] > self.reg_v[opcode.x] {
-                            1
-                        } else {
-                            0
-                        };
-
-                        self.reg_v[opcode.x] = self.reg_v[opcode.x]
-                            .wrapping_sub(self.reg_v[opcode.y]);
+                        let x = self.reg_v[opcode.x];
+                        let y = self.reg_v[opcode.y];
+                        self.reg_v[0xF] = (x >= y) as u8;
+                        self.reg_v[opcode.x] = x.wrapping_sub(y);
                         self.program_counter = self.program_counter + 2;
                     }
                     6 => {
@@ -313,27 +306,18 @@ impl Chip8 {
                         self.program_counter = self.program_counter + 2;
                     }
                     7 => {
-                        self.reg_v[0xF] = if self.reg_v[opcode.x] > self.reg_v[opcode.y] {
-                            1
-                        } else {
-                            0
-                        };
-
-                        self.reg_v[opcode.x] = self.reg_v[opcode.y]
-                            .wrapping_sub(self.reg_v[opcode.x]);
+                        let x = self.reg_v[opcode.x];
+                        let y = self.reg_v[opcode.y];
+                        self.reg_v[0xF] = (y >= x) as u8;
+                        self.reg_v[opcode.x] = y.wrapping_sub(x);
                         self.program_counter = self.program_counter + 2;
                     }
                     0xE => {
-                        self.reg_v[0xF] = if self.reg_v[opcode.x] & 0x80 != 0x00 {
-                            1
-                        } else {
-                            0
-                        };
-
+                        self.reg_v[0xF] = (self.reg_v[opcode.x] & 0x80) >> 7;
                         self.reg_v[opcode.x] = self.reg_v[opcode.x] << 1;
                         self.program_counter = self.program_counter + 2;
                     }
-                    _ => panic!("Invalid OpCode"),
+                    _ => {}
                 }
             }
             9 => {
@@ -436,10 +420,10 @@ impl Chip8 {
 
                         self.program_counter = self.program_counter + 2;
                     }
-                    _ => panic!("Invalid OpCode"),
+                    _ => {}
                 }
             }
-            _ => panic!("Invalid OpCode"),
+            _ => {}
         }
     }
 }
@@ -699,7 +683,7 @@ mod tests {
     }
 
     #[test]
-    fn instruction_sub_carry() {
+    fn instruction_sub_no_carry() {
         let rom = vec![0x80, 0x15];
 
         let mut chip = ::Chip8::new();
@@ -711,11 +695,11 @@ mod tests {
 
         assert_eq!(chip.program_counter, 0x0202);
         assert_eq!(chip.reg_v[0], 0xFB);
-        assert_eq!(chip.reg_v[0xF], 0x01);
+        assert_eq!(chip.reg_v[0xF], 0x00);
     }
 
     #[test]
-    fn instruction_sub_no_carry() {
+    fn instruction_sub_carry() {
         let rom = vec![0x80, 0x15];
 
         let mut chip = ::Chip8::new();
@@ -727,7 +711,7 @@ mod tests {
 
         assert_eq!(chip.program_counter, 0x0202);
         assert_eq!(chip.reg_v[0], 0x05);
-        assert_eq!(chip.reg_v[0xF], 0x0);
+        assert_eq!(chip.reg_v[0xF], 0x1);
     }
 
     #[test]
@@ -761,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn instruction_sub_regs_carry() {
+    fn instruction_sub_regs_no_carry() {
         let rom = vec![0x80, 0x17];
 
         let mut chip = ::Chip8::new();
@@ -773,11 +757,11 @@ mod tests {
 
         assert_eq!(chip.program_counter, 0x0202);
         assert_eq!(chip.reg_v[0], 0xFB);
-        assert_eq!(chip.reg_v[0xF], 0x01);
+        assert_eq!(chip.reg_v[0xF], 0x00);
     }
 
     #[test]
-    fn instruction_sub_regs_no_carry() {
+    fn instruction_sub_regs_carry() {
         let rom = vec![0x80, 0x17];
 
         let mut chip = ::Chip8::new();
@@ -789,7 +773,7 @@ mod tests {
 
         assert_eq!(chip.program_counter, 0x0202);
         assert_eq!(chip.reg_v[0], 0x05);
-        assert_eq!(chip.reg_v[0xF], 0x0);
+        assert_eq!(chip.reg_v[0xF], 0x01);
     }
 
     #[test]
