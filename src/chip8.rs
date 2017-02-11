@@ -431,12 +431,13 @@ impl Chip8 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
     fn instruction_clear_display() {
         let rom = vec![0x00, 0xE0];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.cycle();
@@ -448,7 +449,7 @@ mod tests {
     fn instruction_call() {
         let rom = vec![0x22, 0xFC];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.cycle();
@@ -462,7 +463,7 @@ mod tests {
     fn instruction_return() {
         let rom = vec![0x22, 0x04, 0x00, 0x00, 0x00, 0xEE];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.cycle();
@@ -476,7 +477,7 @@ mod tests {
     fn instruction_jump() {
         let rom = vec![0x12, 0xFC];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.cycle();
@@ -488,7 +489,7 @@ mod tests {
     fn instruction_jump_equal() {
         let rom = vec![0x30, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x15;
@@ -501,7 +502,7 @@ mod tests {
     fn instruction_not_jump_equal() {
         let rom = vec![0x30, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x14;
@@ -514,7 +515,7 @@ mod tests {
     fn instruction_jump_not_equal() {
         let rom = vec![0x40, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x14;
@@ -527,7 +528,7 @@ mod tests {
     fn instruction_not_jump_not_equal() {
         let rom = vec![0x40, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x15;
@@ -540,7 +541,7 @@ mod tests {
     fn instruction_jump_equal_regs() {
         let rom = vec![0x50, 0x10];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x14;
@@ -554,7 +555,7 @@ mod tests {
     fn instruction_not_jump_equal_regs() {
         let rom = vec![0x50, 0x10];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x14;
@@ -568,7 +569,7 @@ mod tests {
     fn instruction_set_reg() {
         let rom = vec![0x60, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.cycle();
@@ -581,7 +582,7 @@ mod tests {
     fn instruction_add_reg() {
         let rom = vec![0x70, 0x10];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x15;
@@ -595,7 +596,7 @@ mod tests {
     fn instruction_assign() {
         let rom = vec![0x80, 0x10];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[1] = 0x15;
@@ -609,7 +610,7 @@ mod tests {
     fn instruction_or() {
         let rom = vec![0x80, 0x11];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x0F;
@@ -624,7 +625,7 @@ mod tests {
     fn instruction_and() {
         let rom = vec![0x80, 0x12];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x0F;
@@ -639,7 +640,7 @@ mod tests {
     fn instruction_xor() {
         let rom = vec![0x80, 0x13];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x15;
@@ -654,7 +655,7 @@ mod tests {
     fn instruction_add_carry() {
         let rom = vec![0x80, 0x14];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0xA5;
@@ -670,7 +671,7 @@ mod tests {
     fn instruction_add_no_carry() {
         let rom = vec![0x80, 0x14];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x15;
@@ -686,7 +687,7 @@ mod tests {
     fn instruction_sub_no_carry() {
         let rom = vec![0x80, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x10;
@@ -702,7 +703,7 @@ mod tests {
     fn instruction_sub_carry() {
         let rom = vec![0x80, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x15;
@@ -718,7 +719,7 @@ mod tests {
     fn instruction_rshift_carry() {
         let rom = vec![0x80, 0x06];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x01;
@@ -733,7 +734,7 @@ mod tests {
     fn instruction_rshift_no_carry() {
         let rom = vec![0x80, 0x06];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x02;
@@ -748,7 +749,7 @@ mod tests {
     fn instruction_sub_regs_no_carry() {
         let rom = vec![0x80, 0x17];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x15;
@@ -764,7 +765,7 @@ mod tests {
     fn instruction_sub_regs_carry() {
         let rom = vec![0x80, 0x17];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x10;
@@ -780,7 +781,7 @@ mod tests {
     fn instruction_lshift_carry() {
         let rom = vec![0x80, 0x0E];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x80;
@@ -795,7 +796,7 @@ mod tests {
     fn instruction_lshift_no_carry() {
         let rom = vec![0x80, 0x0E];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x01;
@@ -810,7 +811,7 @@ mod tests {
     fn instruction_jump_not_equal_regs() {
         let rom = vec![0x90, 0x10];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x14;
@@ -824,7 +825,7 @@ mod tests {
     fn instruction_not_jump_not_equal_regs() {
         let rom = vec![0x90, 0x10];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x14;
@@ -838,7 +839,7 @@ mod tests {
     fn instruction_set_i() {
         let rom = vec![0xA1, 0x23];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.cycle();
@@ -851,7 +852,7 @@ mod tests {
     fn instruction_jump_reg() {
         let rom = vec![0xB1, 0x23];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x10;
@@ -864,7 +865,7 @@ mod tests {
     fn instruction_key_equal() {
         let rom = vec![0xE0, 0x9E];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x3;
@@ -878,7 +879,7 @@ mod tests {
     fn instruction_not_key_equal() {
         let rom = vec![0xE0, 0x9E];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x3;
@@ -891,7 +892,7 @@ mod tests {
     fn instruction_key_not_equal() {
         let rom = vec![0xE0, 0xA1];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x3;
@@ -904,7 +905,7 @@ mod tests {
     fn instruction_not_key_not_equal() {
         let rom = vec![0xE0, 0xA1];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x3;
@@ -918,7 +919,7 @@ mod tests {
     fn instruction_get_timer() {
         let rom = vec![0xF0, 0x07];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.delay_timer = 0x12;
@@ -932,7 +933,7 @@ mod tests {
     fn instruction_key_pressed() {
         let rom = vec![0xF0, 0x0A];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
 
@@ -950,7 +951,7 @@ mod tests {
     fn instruction_set_timer() {
         let rom = vec![0xF0, 0x15];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x12;
@@ -964,7 +965,7 @@ mod tests {
     fn instruction_set_sound() {
         let rom = vec![0xF0, 0x18];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x12;
@@ -978,7 +979,7 @@ mod tests {
     fn instruction_add_i() {
         let rom = vec![0xF0, 0x1E];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x12;
@@ -992,7 +993,7 @@ mod tests {
     fn instruction_sprite_addr() {
         let rom = vec![0xF0, 0x29];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x1;
@@ -1006,7 +1007,7 @@ mod tests {
     fn instruction_bcd() {
         let rom = vec![0xF0, 0x33];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0xF3;
@@ -1023,7 +1024,7 @@ mod tests {
     fn instruction_store() {
         let rom = vec![0xF2, 0x55];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v[0] = 0x12;
@@ -1042,7 +1043,7 @@ mod tests {
     fn instruction_load() {
         let rom = vec![0xF2, 0x65];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.memory[0x0500] = 0x12;
@@ -1061,7 +1062,7 @@ mod tests {
     fn instruction_display() {
         let rom = vec![0xD0, 0x05];
 
-        let mut chip = ::Chip8::new();
+        let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_i = 0x0000;
