@@ -201,13 +201,14 @@ impl Chip8 {
             let pixel = self.memory[memory_position];
             for x_line in 0..8 {
                 if (pixel & (0x80 >> x_line)) != 0x00 {
-                    let gfx_position = x + x_line + ((y + y_line as usize) * DISPLAY_WIDTH);
-                    let current_pixel = self.reg_gfx[gfx_position];
-                    if current_pixel == 0x01 {
-                        self.reg_v[0xF] = 1;
-                    }
+                    let gfx_position = (self.reg_v[x] as usize + x_line +
+                                        ((self.reg_v[y] as usize + y_line as usize) *
+                                         DISPLAY_WIDTH)) %
+                                       GFX_MEMORY_SIZE;
+                    let current_pixel = self.reg_gfx[gfx_position as usize];
+                    self.reg_v[0xF] = current_pixel & 0x01;
 
-                    self.reg_gfx[gfx_position] = self.reg_gfx[gfx_position] ^ 1;
+                    self.reg_gfx[gfx_position as usize] = !current_pixel;
                 }
             }
         }
