@@ -1,11 +1,6 @@
 use super::*;
 
 #[cfg(not(test))]
-use std::time;
-#[cfg(not(test))]
-use std::thread;
-
-#[cfg(not(test))]
 use sdl2::pixels;
 #[cfg(not(test))]
 use sdl2::event::Event;
@@ -15,7 +10,7 @@ use sdl2::keyboard::Keycode;
 use opcode::Opcode;
 
 #[cfg(not(test))]
-const PIXEL_SIZE: usize = 20;
+const PIXEL_SIZE: usize = 5;
 const DISPLAY_HEIGHT: usize = 32;
 const DISPLAY_WIDTH: usize = 64;
 const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
@@ -150,9 +145,6 @@ impl Chip8 {
                 renderer.present();
                 self.refresh = false;
             }
-
-            let duration = time::Duration::from_millis(16);
-            thread::sleep(duration);
         }
     }
 
@@ -160,10 +152,9 @@ impl Chip8 {
     fn render(&self, renderer: &mut sdl2::render::Renderer) {
         for y in 0..DISPLAY_HEIGHT {
             for x in 0..DISPLAY_WIDTH {
-                let pixel_position = (y * (DISPLAY_HEIGHT)) + x;
-                let pixel = self.reg_gfx[pixel_position] as usize;
-                let color = if self.reg_gfx[pixel] == 0 {
-                    pixels::Color::RGB(0, 255, 0)
+                let index = (y * DISPLAY_WIDTH) + x;
+                let color = if self.reg_gfx[index] == 0 {
+                    pixels::Color::RGB(0, 0, 0)
                 } else {
                     pixels::Color::RGB(255, 255, 255)
                 };
@@ -270,7 +261,7 @@ impl Chip8 {
                 self.program_counter = self.program_counter + 2;
             }
             7 => {
-                self.reg_v[opcode.x] = self.reg_v[opcode.x] + opcode.byte;
+                self.reg_v[opcode.x] = self.reg_v[opcode.x].wrapping_add(opcode.byte);
                 self.program_counter = self.program_counter + 2;
             }
             8 => {
@@ -292,31 +283,50 @@ impl Chip8 {
                         self.program_counter = self.program_counter + 2;
                     }
                     4 => {
-                        self.memory[0xF] = if opcode.y > (0xFF - opcode.x) { 1 } else { 0 };
+                        self.reg_v[0xF] = if self.reg_v[opcode.y] > (0xFF - self.reg_v[opcode.x]) {
+                            1
+                        } else {
+                            0
+                        };
 
                         self.reg_v[opcode.x] = self.reg_v[opcode.x]
                             .wrapping_add(self.reg_v[opcode.y]);
                         self.program_counter = self.program_counter + 2;
                     }
                     5 => {
-                        self.memory[0xF] = if opcode.y > opcode.x { 1 } else { 0 };
+                        self.reg_v[0xF] = if self.reg_v[opcode.y] > self.reg_v[opcode.x] {
+                            1
+                        } else {
+                            0
+                        };
+
                         self.reg_v[opcode.x] = self.reg_v[opcode.x]
                             .wrapping_sub(self.reg_v[opcode.y]);
                         self.program_counter = self.program_counter + 2;
                     }
                     6 => {
-                        self.memory[0xF] = self.reg_v[opcode.x] & 0x01;
+                        self.reg_v[0xF] = self.reg_v[opcode.x] & 0x01;
                         self.reg_v[opcode.x] = self.reg_v[opcode.x] >> 1;
                         self.program_counter = self.program_counter + 2;
                     }
                     7 => {
-                        self.memory[0xF] = if opcode.x > opcode.y { 1 } else { 0 };
+                        self.reg_v[0xF] = if self.reg_v[opcode.x] > self.reg_v[opcode.y] {
+                            1
+                        } else {
+                            0
+                        };
+
                         self.reg_v[opcode.x] = self.reg_v[opcode.y]
                             .wrapping_sub(self.reg_v[opcode.x]);
                         self.program_counter = self.program_counter + 2;
                     }
                     0xE => {
-                        self.memory[0xF] = self.reg_v[opcode.x] & 0x80;
+                        self.reg_v[0xF] = if self.reg_v[opcode.x] & 0x80 != 0x00 {
+                            1
+                        } else {
+                            0
+                        };
+
                         self.reg_v[opcode.x] = self.reg_v[opcode.x] << 1;
                         self.program_counter = self.program_counter + 2;
                     }
@@ -335,8 +345,7 @@ impl Chip8 {
                 self.program_counter = self.program_counter + 2;
             }
             0xB => {
-                self.program_counter = opcode.address + self.reg_v[opcode.x] as u16;
-                self.program_counter = self.program_counter + 2;
+                self.program_counter = opcode.address + self.reg_v[0] as u16;
             }
             0xC => {
                 self.reg_v[opcode.x] = rand::random::<u8>() & opcode.byte;
@@ -374,7 +383,7 @@ impl Chip8 {
                     0x0A => {
                         for index in 0..NUM_KEYS {
                             if self.keys[index] != 0x00 {
-                                self.reg_v[opcode.x] = self.keys[index];
+                                self.reg_v[opcode.x] = index as u8;
                                 self.program_counter = self.program_counter + 2;
                                 break;
                             }
@@ -411,14 +420,14 @@ impl Chip8 {
                         self.program_counter = self.program_counter + 2;
                     }
                     0x55 => {
-                        for x in 0..opcode.x {
+                        for x in 0..(opcode.x + 1) {
                             self.memory[self.reg_i as usize + x] = self.reg_v[x];
                         }
 
                         self.program_counter = self.program_counter + 2;
                     }
                     0x65 => {
-                        for x in 0..opcode.x {
+                        for x in 0..(opcode.x + 1) {
                             self.reg_v[x] = self.memory[self.reg_i as usize + x];
                         }
 
@@ -994,7 +1003,7 @@ mod tests {
 
     #[test]
     fn instruction_sprite_addr() {
-        let rom = vec![0xF0, 0x1E];
+        let rom = vec![0xF0, 0x29];
 
         let mut chip = ::Chip8::new();
         chip.initialize();
@@ -1002,7 +1011,7 @@ mod tests {
         chip.reg_v[0] = 0x1;
         chip.cycle();
 
-        assert_eq!(chip.reg_i, 0x0006);
+        assert_eq!(chip.reg_i, 0x0005);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -1044,7 +1053,7 @@ mod tests {
 
     #[test]
     fn instruction_load() {
-        let rom = vec![0xF2, 0x55];
+        let rom = vec![0xF2, 0x65];
 
         let mut chip = ::Chip8::new();
         chip.initialize();
@@ -1072,22 +1081,22 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 1);
-        assert_eq!(chip.reg_v[1], 1);
-        assert_eq!(chip.reg_v[2], 1);
-        assert_eq!(chip.reg_v[3], 1);
-        assert_eq!(chip.reg_v[4], 0);
-        assert_eq!(chip.reg_v[5], 0);
-        assert_eq!(chip.reg_v[6], 0);
-        assert_eq!(chip.reg_v[7], 0);
+        assert_eq!(chip.reg_gfx[0], 1);
+        assert_eq!(chip.reg_gfx[1], 1);
+        assert_eq!(chip.reg_gfx[2], 1);
+        assert_eq!(chip.reg_gfx[3], 1);
+        assert_eq!(chip.reg_gfx[4], 0);
+        assert_eq!(chip.reg_gfx[5], 0);
+        assert_eq!(chip.reg_gfx[6], 0);
+        assert_eq!(chip.reg_gfx[7], 0);
 
-        assert_eq!(chip.reg_v[64 + 0], 1);
-        assert_eq!(chip.reg_v[64 + 1], 0);
-        assert_eq!(chip.reg_v[64 + 2], 0);
-        assert_eq!(chip.reg_v[64 + 3], 1);
-        assert_eq!(chip.reg_v[64 + 4], 0);
-        assert_eq!(chip.reg_v[64 + 5], 0);
-        assert_eq!(chip.reg_v[64 + 6], 0);
-        assert_eq!(chip.reg_v[64 + 7], 0);
+        assert_eq!(chip.reg_gfx[64 + 0], 1);
+        assert_eq!(chip.reg_gfx[64 + 1], 0);
+        assert_eq!(chip.reg_gfx[64 + 2], 0);
+        assert_eq!(chip.reg_gfx[64 + 3], 1);
+        assert_eq!(chip.reg_gfx[64 + 4], 0);
+        assert_eq!(chip.reg_gfx[64 + 5], 0);
+        assert_eq!(chip.reg_gfx[64 + 6], 0);
+        assert_eq!(chip.reg_gfx[64 + 7], 0);
     }
 }
