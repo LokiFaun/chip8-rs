@@ -513,4 +513,581 @@ mod tests {
 
         assert_eq!(chip.program_counter, 0x0202);
     }
+
+    #[test]
+    fn instruction_jump_not_equal() {
+        let rom = vec![0x40, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x14;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0204);
+    }
+
+    #[test]
+    fn instruction_not_jump_not_equal() {
+        let rom = vec![0x40, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_jump_equal_regs() {
+        let rom = vec![0x50, 0x10];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x14;
+        chip.reg_v[1] = 0x14;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0204);
+    }
+
+    #[test]
+    fn instruction_not_jump_equal_regs() {
+        let rom = vec![0x50, 0x10];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x14;
+        chip.reg_v[1] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_set_reg() {
+        let rom = vec![0x60, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x15);
+    }
+
+    #[test]
+    fn instruction_add_reg() {
+        let rom = vec![0x70, 0x10];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x25);
+    }
+
+    #[test]
+    fn instruction_assign() {
+        let rom = vec![0x80, 0x10];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[1] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x15);
+    }
+
+    #[test]
+    fn instruction_or() {
+        let rom = vec![0x80, 0x11];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x0F;
+        chip.reg_v[1] = 0xF0;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0xFF);
+    }
+
+    #[test]
+    fn instruction_and() {
+        let rom = vec![0x80, 0x12];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x0F;
+        chip.reg_v[1] = 0xF0;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x00);
+    }
+
+    #[test]
+    fn instruction_xor() {
+        let rom = vec![0x80, 0x13];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x15;
+        chip.reg_v[1] = 0x35;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x20);
+    }
+
+    #[test]
+    fn instruction_add_carry() {
+        let rom = vec![0x80, 0x14];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0xA5;
+        chip.reg_v[1] = 0xA5;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x4A);
+        assert_eq!(chip.reg_v[0xF], 0x01);
+    }
+
+    #[test]
+    fn instruction_add_no_carry() {
+        let rom = vec![0x80, 0x14];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x15;
+        chip.reg_v[1] = 0x10;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x25);
+        assert_eq!(chip.reg_v[0xF], 0x0);
+    }
+
+    #[test]
+    fn instruction_sub_carry() {
+        let rom = vec![0x80, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x10;
+        chip.reg_v[1] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0xFB);
+        assert_eq!(chip.reg_v[0xF], 0x01);
+    }
+
+    #[test]
+    fn instruction_sub_no_carry() {
+        let rom = vec![0x80, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x15;
+        chip.reg_v[1] = 0x10;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x05);
+        assert_eq!(chip.reg_v[0xF], 0x0);
+    }
+
+    #[test]
+    fn instruction_rshift_carry() {
+        let rom = vec![0x80, 0x06];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x01;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x00);
+        assert_eq!(chip.reg_v[0xF], 0x01);
+    }
+
+    #[test]
+    fn instruction_rshift_no_carry() {
+        let rom = vec![0x80, 0x06];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x02;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x01);
+        assert_eq!(chip.reg_v[0xF], 0x0);
+    }
+
+    #[test]
+    fn instruction_sub_regs_carry() {
+        let rom = vec![0x80, 0x17];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x15;
+        chip.reg_v[1] = 0x10;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0xFB);
+        assert_eq!(chip.reg_v[0xF], 0x01);
+    }
+
+    #[test]
+    fn instruction_sub_regs_no_carry() {
+        let rom = vec![0x80, 0x17];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x10;
+        chip.reg_v[1] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x05);
+        assert_eq!(chip.reg_v[0xF], 0x0);
+    }
+
+    #[test]
+    fn instruction_lshift_carry() {
+        let rom = vec![0x80, 0x0E];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x80;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x00);
+        assert_eq!(chip.reg_v[0xF], 0x01);
+    }
+
+    #[test]
+    fn instruction_lshift_no_carry() {
+        let rom = vec![0x80, 0x0E];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x01;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 0x02);
+        assert_eq!(chip.reg_v[0xF], 0x0);
+    }
+
+    #[test]
+    fn instruction_jump_not_equal_regs() {
+        let rom = vec![0x90, 0x10];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x14;
+        chip.reg_v[1] = 0x15;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0204);
+    }
+
+    #[test]
+    fn instruction_not_jump_not_equal_regs() {
+        let rom = vec![0x90, 0x10];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x14;
+        chip.reg_v[1] = 0x14;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_set_i() {
+        let rom = vec![0xA1, 0x23];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_i, 0x0123);
+    }
+
+    #[test]
+    fn instruction_jump_reg() {
+        let rom = vec![0xB1, 0x23];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x10;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0133);
+    }
+
+    #[test]
+    fn instruction_key_equal() {
+        let rom = vec![0xE0, 0x9E];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x3;
+        chip.keys[3] = 0x1;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0204);
+    }
+
+    #[test]
+    fn instruction_not_key_equal() {
+        let rom = vec![0xE0, 0x9E];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x3;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_key_not_equal() {
+        let rom = vec![0xE0, 0xA1];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x3;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0204);
+    }
+
+    #[test]
+    fn instruction_not_key_not_equal() {
+        let rom = vec![0xE0, 0xA1];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x3;
+        chip.keys[3] = 0x1;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_get_timer() {
+        let rom = vec![0xF0, 0x07];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.delay_timer = 0x12;
+        chip.cycle();
+
+        assert_eq!(chip.reg_v[0], 0x12);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_key_pressed() {
+        let rom = vec![0xF0, 0x0A];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+
+        chip.cycle();
+        assert_eq!(chip.program_counter, 0x0200);
+
+        chip.keys[5] = 0x1;
+        chip.cycle();
+
+        assert_eq!(chip.reg_v[0], 0x05);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_set_timer() {
+        let rom = vec![0xF0, 0x15];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x12;
+        chip.cycle();
+
+        assert_eq!(chip.delay_timer, 0x11);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_set_sound() {
+        let rom = vec![0xF0, 0x18];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x12;
+        chip.cycle();
+
+        assert_eq!(chip.sound_timer, 0x11);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_add_i() {
+        let rom = vec![0xF0, 0x1E];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x12;
+        chip.cycle();
+
+        assert_eq!(chip.reg_i, 0x0012);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_sprite_addr() {
+        let rom = vec![0xF0, 0x1E];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x1;
+        chip.cycle();
+
+        assert_eq!(chip.reg_i, 0x0006);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_bcd() {
+        let rom = vec![0xF0, 0x33];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0xF3;
+        chip.reg_i = 0x0500;
+        chip.cycle();
+
+        assert_eq!(chip.memory[0x0500], 2);
+        assert_eq!(chip.memory[0x0501], 4);
+        assert_eq!(chip.memory[0x0502], 3);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_store() {
+        let rom = vec![0xF2, 0x55];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_v[0] = 0x12;
+        chip.reg_v[1] = 0x34;
+        chip.reg_v[2] = 0x56;
+        chip.reg_i = 0x500;
+        chip.cycle();
+
+        assert_eq!(chip.memory[0x0500], 0x12);
+        assert_eq!(chip.memory[0x0501], 0x34);
+        assert_eq!(chip.memory[0x0502], 0x56);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_load() {
+        let rom = vec![0xF2, 0x55];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.memory[0x0500] = 0x12;
+        chip.memory[0x0501] = 0x34;
+        chip.memory[0x0502] = 0x56;
+        chip.reg_i = 0x500;
+        chip.cycle();
+
+        assert_eq!(chip.reg_v[0], 0x12);
+        assert_eq!(chip.reg_v[1], 0x34);
+        assert_eq!(chip.reg_v[2], 0x56);
+        assert_eq!(chip.program_counter, 0x0202);
+    }
+
+    #[test]
+    fn instruction_display() {
+        let rom = vec![0xD0, 0x05];
+
+        let mut chip = ::Chip8::new();
+        chip.initialize();
+        chip.load_rom(rom);
+        chip.reg_i = 0x0000;
+        chip.cycle();
+
+        assert_eq!(chip.program_counter, 0x0202);
+        assert_eq!(chip.reg_v[0], 1);
+        assert_eq!(chip.reg_v[1], 1);
+        assert_eq!(chip.reg_v[2], 1);
+        assert_eq!(chip.reg_v[3], 1);
+        assert_eq!(chip.reg_v[4], 0);
+        assert_eq!(chip.reg_v[5], 0);
+        assert_eq!(chip.reg_v[6], 0);
+        assert_eq!(chip.reg_v[7], 0);
+
+        assert_eq!(chip.reg_v[64 + 0], 1);
+        assert_eq!(chip.reg_v[64 + 1], 0);
+        assert_eq!(chip.reg_v[64 + 2], 0);
+        assert_eq!(chip.reg_v[64 + 3], 1);
+        assert_eq!(chip.reg_v[64 + 4], 0);
+        assert_eq!(chip.reg_v[64 + 5], 0);
+        assert_eq!(chip.reg_v[64 + 6], 0);
+        assert_eq!(chip.reg_v[64 + 7], 0);
+    }
 }
