@@ -183,8 +183,10 @@ impl Chip8 {
     }
 
     fn fetch_opcode(&self) -> Opcode {
-        let opcode = ((self.memory[self.program_counter as usize] as u16) << 8) +
-                     (self.memory[self.program_counter as usize + 1] as u16);
+        let index = self.program_counter as usize;
+        let a = self.memory[index] as u16;
+        let b = self.memory[index + 1] as u16;
+        let opcode = (a << 8) + b;
         Opcode::new(opcode)
     }
 
@@ -1082,22 +1084,22 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_gfx[0], 1);
-        assert_eq!(chip.reg_gfx[1], 1);
-        assert_eq!(chip.reg_gfx[2], 1);
-        assert_eq!(chip.reg_gfx[3], 1);
-        assert_eq!(chip.reg_gfx[4], 0);
-        assert_eq!(chip.reg_gfx[5], 0);
-        assert_eq!(chip.reg_gfx[6], 0);
-        assert_eq!(chip.reg_gfx[7], 0);
+        assert_eq!(chip.reg_gfx[0], 0xFF);
+        assert_eq!(chip.reg_gfx[1], 0xFF);
+        assert_eq!(chip.reg_gfx[2], 0xFF);
+        assert_eq!(chip.reg_gfx[3], 0xFF);
+        assert_eq!(chip.reg_gfx[4], 0x00);
+        assert_eq!(chip.reg_gfx[5], 0x00);
+        assert_eq!(chip.reg_gfx[6], 0x00);
+        assert_eq!(chip.reg_gfx[7], 0x00);
 
-        assert_eq!(chip.reg_gfx[64 + 0], 1);
-        assert_eq!(chip.reg_gfx[64 + 1], 0);
-        assert_eq!(chip.reg_gfx[64 + 2], 0);
-        assert_eq!(chip.reg_gfx[64 + 3], 1);
-        assert_eq!(chip.reg_gfx[64 + 4], 0);
-        assert_eq!(chip.reg_gfx[64 + 5], 0);
-        assert_eq!(chip.reg_gfx[64 + 6], 0);
-        assert_eq!(chip.reg_gfx[64 + 7], 0);
+        assert_eq!(chip.reg_gfx[64 + 0], 0xFF);
+        assert_eq!(chip.reg_gfx[64 + 1], 0x00);
+        assert_eq!(chip.reg_gfx[64 + 2], 0x00);
+        assert_eq!(chip.reg_gfx[64 + 3], 0xFF);
+        assert_eq!(chip.reg_gfx[64 + 4], 0x00);
+        assert_eq!(chip.reg_gfx[64 + 5], 0x00);
+        assert_eq!(chip.reg_gfx[64 + 6], 0x00);
+        assert_eq!(chip.reg_gfx[64 + 7], 0x00);
     }
 }
