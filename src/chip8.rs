@@ -7,6 +7,31 @@ use sdl2::event::Event;
 #[cfg(not(test))]
 use sdl2::keyboard::Keycode;
 
+#[derive(Debug)]
+pub enum Chip8Error {
+    IntegerOrSdlError,
+    WindowBuildError,
+    Message(String),
+}
+
+impl From<String> for Chip8Error {
+    fn from(msg: String) -> Chip8Error {
+        Chip8Error::Message(msg)
+    }
+}
+
+impl From<sdl2::IntegerOrSdlError> for Chip8Error {
+    fn from(_: sdl2::IntegerOrSdlError) -> Chip8Error {
+        Chip8Error::IntegerOrSdlError
+    }
+}
+
+impl From<sdl2::video::WindowBuildError> for Chip8Error {
+    fn from(_: sdl2::video::WindowBuildError) -> Chip8Error {
+        Chip8Error::WindowBuildError
+    }
+}
+
 use opcode::Opcode;
 
 #[cfg(not(test))]
@@ -81,23 +106,22 @@ impl Chip8 {
     }
 
     #[cfg(not(test))]
-    pub fn run(&mut self) {
-        let sdl_context = super::sdl2::init().unwrap();
-        let video_subsys = sdl_context.video().unwrap();
-        let window = video_subsys.window("chip8",
+    pub fn run(&mut self) -> Result<(), Chip8Error> {
+        let sdl_context = try!(sdl2::init());
+        let video_subsys = try!(sdl_context.video());
+        let window = try!(video_subsys.window("chip8",
                     (DISPLAY_WIDTH * PIXEL_SIZE) as u32,
                     (DISPLAY_HEIGHT * PIXEL_SIZE) as u32)
             .position_centered()
             .opengl()
-            .build()
-            .unwrap();
+            .build());
 
-        let mut renderer = window.renderer().build().unwrap();
+        let mut renderer = try!(window.renderer().build());
         renderer.set_draw_color(pixels::Color::RGB(0, 0, 0));
         renderer.clear();
         renderer.present();
 
-        let mut events = sdl_context.event_pump().unwrap();
+        let mut events = try!(sdl_context.event_pump());
 
         'main: loop {
             for event in events.poll_iter() {
@@ -146,6 +170,8 @@ impl Chip8 {
                 self.refresh = false;
             }
         }
+
+        Ok(())
     }
 
     #[cfg(not(test))]

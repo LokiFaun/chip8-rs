@@ -20,7 +20,19 @@ fn main() {
             let mut chip = chip8::Chip8::new();
             chip.initialize();
             chip.load_rom(rom);
-            chip.run();
+            match chip.run() {
+                Err(err) => {
+                    match err {
+                        chip8::Chip8Error::Message(msg) => {
+                            println!("Error running chip8: {}", msg);
+                        }
+                        _ => {
+                            println!("Error running chip8: {:?}", err);
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
     } else {
         println!("Usage: chip8 <rom>");
