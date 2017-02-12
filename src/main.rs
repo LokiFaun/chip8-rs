@@ -3,7 +3,6 @@ extern crate sdl2;
 
 mod opcode;
 mod chip8;
-use chip8::Chip8;
 
 #[cfg(not(test))]
 fn main() {
@@ -18,7 +17,7 @@ fn main() {
 
         if !rom.is_empty() {
             println!("Starting CHIP-8 emulator...");
-            let mut chip = Chip8::new();
+            let mut chip = chip8::Chip8::new();
             chip.initialize();
             chip.load_rom(rom);
             chip.run();
