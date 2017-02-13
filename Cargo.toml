@@ -6,3 +6,5 @@ authors = ["LokiFaun <johannes.schuetz@outlook.com>"]
 [dependencies]
 rand = "0.3"
 sdl2 = "0.28"
+timer = "0.1.6"
+chrono = "0.3.0"

@@ -1,12 +1,37 @@
 extern crate rand;
 extern crate sdl2;
+extern crate timer;
+extern crate chrono;
 
 mod opcode;
 mod chip8;
 
+// Instructions per second: 840 => 1sec / 840 = 1190µs
+const INSTRUCTION_TIME: i32 = 1190;
+
+fn test_timer() {
+    use std::thread;
+    use std::sync::{Arc, Mutex};
+    let timer = timer::Timer::new();
+    let count = Arc::new(Mutex::new(0));
+    let guard = {
+        let count = count.clone();
+        timer.schedule_repeating(chrono::Duration::nanoseconds(1000000000 / 840), move || {
+            *count.lock().unwrap() += 1;
+        })
+    };
+
+    thread::sleep(std::time::Duration::new(1, 0));
+    let count_result = *count.lock().unwrap();
+    println!("{0} instruction executions!", count_result);
+    drop(guard);
+}
+
 #[cfg(not(test))]
 fn main() {
     use std::env;
+
+    test_timer();
 
     if let Some(rom_file_name) = env::args().nth(1) {
         println!("Reading ROM: {}...", rom_file_name);
