@@ -2,10 +2,8 @@ use super::*;
 
 #[cfg(not(test))]
 use sdl2::pixels;
-#[cfg(not(test))]
-use sdl2::event::Event;
-#[cfg(not(test))]
-use sdl2::keyboard::Keycode;
+
+use opcode::Opcode;
 
 #[derive(Debug)]
 pub enum Chip8Error {
@@ -31,8 +29,6 @@ impl From<sdl2::video::WindowBuildError> for Chip8Error {
         Chip8Error::WindowBuildError
     }
 }
-
-use opcode::Opcode;
 
 #[cfg(not(test))]
 const PIXEL_SIZE: usize = 5;
@@ -107,6 +103,9 @@ impl Chip8 {
 
     #[cfg(not(test))]
     pub fn run(&mut self) -> Result<(), Chip8Error> {
+        use sdl2::event::Event;
+        use sdl2::keyboard::Keycode;
+
         let sdl_context = try!(sdl2::init());
         let video_subsys = try!(sdl_context.video());
         let window = try!(video_subsys.window("chip8",

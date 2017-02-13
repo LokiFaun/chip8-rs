@@ -6,9 +6,6 @@ extern crate chrono;
 mod opcode;
 mod chip8;
 
-// Instructions per second: 840 => 1sec / 840 = 1190µs
-const INSTRUCTION_TIME: i32 = 1190;
-
 fn test_timer() {
     use std::thread;
     use std::sync::{Arc, Mutex};
@@ -16,6 +13,7 @@ fn test_timer() {
     let count = Arc::new(Mutex::new(0));
     let guard = {
         let count = count.clone();
+        // Instructions per second: 840 => 1sec / 840 = 1190µs
         timer.schedule_repeating(chrono::Duration::nanoseconds(1000000000 / 840), move || {
             *count.lock().unwrap() += 1;
         })
