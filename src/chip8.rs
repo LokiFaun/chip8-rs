@@ -41,6 +41,8 @@ const STACK_SIZE: usize = 16;
 const NUM_KEYS: usize = 16;
 const PROGRAM_START: usize = 0x200;
 const FONT_SET_SIZE: usize = 80;
+const INSTRUCTIONS_PER_SECOND: i64 = 840;
+const NANO_SECONDS_PER_SECOND: i64 = 1 * 1000 * 1000 * 1000;
 const FONT_SET: [u8; FONT_SET_SIZE] =
     [0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70, 0xF0, 0x10, 0xF0, 0x80, 0xF0,
      0xF0, 0x10, 0xF0, 0x10, 0xF0, 0x90, 0x90, 0xF0, 0x10, 0x10, 0xF0, 0x80, 0xF0, 0x10, 0xF0,
@@ -122,6 +124,7 @@ impl Chip8 {
 
         let mut events = try!(sdl_context.event_pump());
         'main: loop {
+            let start = std::time::Instant::now();
             for event in events.poll_iter() {
                 match event {
                     Event::Quit { .. } => break 'main,
@@ -180,6 +183,16 @@ impl Chip8 {
                 self.render(&mut renderer);
                 renderer.present();
                 self.refresh = false;
+            }
+
+            let elapsed = start.elapsed();
+            let elapsed_duration = chrono::Duration::from_std(elapsed).unwrap();
+            let cycle_time = chrono::Duration::nanoseconds(NANO_SECONDS_PER_SECOND /
+                                                           INSTRUCTIONS_PER_SECOND);
+            if cycle_time > elapsed_duration {
+                let sleep_time = cycle_time - elapsed_duration;
+                let sleep_duration = sleep_time.to_std().unwrap();
+                std::thread::sleep(sleep_duration);
             }
         }
 
