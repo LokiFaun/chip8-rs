@@ -1,3 +1,6 @@
+#![cfg_attr(feature="clippy", feature(plugin))]
+#![cfg_attr(feature="clippy", plugin(clippy))]
+
 extern crate rand;
 extern crate sdl2;
 extern crate timer;
@@ -43,19 +46,16 @@ fn main() {
             let mut chip = chip8::Chip8::new();
             chip.initialize();
             chip.load_rom(rom);
-            match chip.run() {
-                Err(err) => {
-                    match err {
-                        chip8::Chip8Error::Message(msg) => {
-                            println!("Error running chip8: {}", msg);
-                        }
-                        _ => {
-                            println!("Error running chip8: {:?}", err);
-                        }
+            if let Err(err) = chip.run() {
+                match err {
+                    chip8::Chip8Error::Message(msg) => {
+                        println!("Error running chip8: {}", msg);
+                    }
+                    _ => {
+                        println!("Error running chip8: {:?}", err);
                     }
                 }
-                _ => {}
-            }
+            };
         }
     } else {
         println!("Usage: chip8 <rom>");

@@ -42,7 +42,7 @@ const NUM_KEYS: usize = 16;
 const PROGRAM_START: usize = 0x200;
 const FONT_SET_SIZE: usize = 80;
 const INSTRUCTIONS_PER_SECOND: i64 = 840;
-const NANO_SECONDS_PER_SECOND: i64 = 1 * 1000 * 1000 * 1000;
+const NANO_SECONDS_PER_SECOND: i64 = 1000 * 1000 * 1000;
 const FONT_SET: [u8; FONT_SET_SIZE] =
     [0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70, 0xF0, 0x10, 0xF0, 0x80, 0xF0,
      0xF0, 0x10, 0xF0, 0x10, 0xF0, 0x90, 0x90, 0xF0, 0x10, 0x10, 0xF0, 0x80, 0xF0, 0x10, 0xF0,
@@ -225,11 +225,11 @@ impl Chip8 {
         self.execute_opcode(opcode);
 
         if self.delay_timer > 0 {
-            self.delay_timer = self.delay_timer - 1;
+            self.delay_timer -= 1;
         }
 
         if self.sound_timer > 0 {
-            self.sound_timer = self.sound_timer - 1;
+            self.sound_timer -= 1;
         }
     }
 
@@ -273,68 +273,68 @@ impl Chip8 {
                 match opcode.byte {
                     0xE0 => {
                         self.clear_screen();
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0xEE => {
                         self.program_counter = self.stack[self.stack_pointer as usize];
-                        self.stack_pointer = self.stack_pointer - 1;
-                        self.program_counter = self.program_counter + 2;
+                        self.stack_pointer -= 1;
+                        self.program_counter += 2;
                     }
                     _ => {}
                 }
             }
             1 => self.program_counter = opcode.address,
             2 => {
-                self.stack_pointer = self.stack_pointer + 1;
+                self.stack_pointer += 1;
                 self.stack[self.stack_pointer as usize] = self.program_counter;
                 self.program_counter = opcode.address;
             }
             3 => {
                 if self.reg_v[opcode.x] == opcode.byte {
-                    self.program_counter = self.program_counter + 4;
+                    self.program_counter += 4;
                 } else {
-                    self.program_counter = self.program_counter + 2;
+                    self.program_counter += 2;
                 }
             }
             4 => {
                 if self.reg_v[opcode.x] != opcode.byte {
-                    self.program_counter = self.program_counter + 4;
+                    self.program_counter += 4;
                 } else {
-                    self.program_counter = self.program_counter + 2;
+                    self.program_counter += 2;
                 }
             }
             5 => {
                 if self.reg_v[opcode.x] == self.reg_v[opcode.y] {
-                    self.program_counter = self.program_counter + 4;
+                    self.program_counter += 4;
                 } else {
-                    self.program_counter = self.program_counter + 2;
+                    self.program_counter += 2;
                 }
             }
             6 => {
                 self.reg_v[opcode.x] = opcode.byte;
-                self.program_counter = self.program_counter + 2;
+                self.program_counter += 2;
             }
             7 => {
                 self.reg_v[opcode.x] = self.reg_v[opcode.x].wrapping_add(opcode.byte);
-                self.program_counter = self.program_counter + 2;
+                self.program_counter += 2;
             }
             8 => {
                 match opcode.nibble {
                     0 => {
                         self.reg_v[opcode.x] = self.reg_v[opcode.y];
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     1 => {
-                        self.reg_v[opcode.x] = self.reg_v[opcode.x] | self.reg_v[opcode.y];
-                        self.program_counter = self.program_counter + 2;
+                        self.reg_v[opcode.x] |= self.reg_v[opcode.y];
+                        self.program_counter += 2;
                     }
                     2 => {
-                        self.reg_v[opcode.x] = self.reg_v[opcode.x] & self.reg_v[opcode.y];
-                        self.program_counter = self.program_counter + 2;
+                        self.reg_v[opcode.x] &= self.reg_v[opcode.y];
+                        self.program_counter += 2;
                     }
                     3 => {
-                        self.reg_v[opcode.x] = self.reg_v[opcode.x] ^ self.reg_v[opcode.y];
-                        self.program_counter = self.program_counter + 2;
+                        self.reg_v[opcode.x] ^= self.reg_v[opcode.y];
+                        self.program_counter += 2;
                     }
                     4 => {
                         let x = self.reg_v[opcode.x];
@@ -342,71 +342,71 @@ impl Chip8 {
                         self.reg_v[0xF] = ((x as u16 + y as u16) > 0xFF) as u8;
 
                         self.reg_v[opcode.x] = x.wrapping_add(y);
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     5 => {
                         let x = self.reg_v[opcode.x];
                         let y = self.reg_v[opcode.y];
                         self.reg_v[0xF] = (x >= y) as u8;
                         self.reg_v[opcode.x] = x.wrapping_sub(y);
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     6 => {
                         self.reg_v[0xF] = self.reg_v[opcode.x] & 0x01;
-                        self.reg_v[opcode.x] = self.reg_v[opcode.x] >> 1;
-                        self.program_counter = self.program_counter + 2;
+                        self.reg_v[opcode.x] >>= 1;
+                        self.program_counter += 2;
                     }
                     7 => {
                         let x = self.reg_v[opcode.x];
                         let y = self.reg_v[opcode.y];
                         self.reg_v[0xF] = (y >= x) as u8;
                         self.reg_v[opcode.x] = y.wrapping_sub(x);
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0xE => {
                         self.reg_v[0xF] = (self.reg_v[opcode.x] & 0x80) >> 7;
-                        self.reg_v[opcode.x] = self.reg_v[opcode.x] << 1;
-                        self.program_counter = self.program_counter + 2;
+                        self.reg_v[opcode.x] <<= 1;
+                        self.program_counter += 2;
                     }
                     _ => {}
                 }
             }
             9 => {
                 if self.reg_v[opcode.x] != self.reg_v[opcode.y] {
-                    self.program_counter = self.program_counter + 4;
+                    self.program_counter += 4;
                 } else {
-                    self.program_counter = self.program_counter + 2;
+                    self.program_counter += 2;
                 }
             }
             0xA => {
                 self.reg_i = opcode.address;
-                self.program_counter = self.program_counter + 2;
+                self.program_counter += 2;
             }
             0xB => {
                 self.program_counter = opcode.address + self.reg_v[0] as u16;
             }
             0xC => {
                 self.reg_v[opcode.x] = rand::random::<u8>() & opcode.byte;
-                self.program_counter = self.program_counter + 2;
+                self.program_counter += 2;
             }
             0xD => {
                 self.display(opcode.x, opcode.y, opcode.nibble);
-                self.program_counter = self.program_counter + 2;
+                self.program_counter += 2;
             }
             0xE => {
                 match opcode.byte {
                     0x9E => {
                         if self.keys[self.reg_v[opcode.x] as usize] != 0 {
-                            self.program_counter = self.program_counter + 4;
+                            self.program_counter += 4;
                         } else {
-                            self.program_counter = self.program_counter + 2;
+                            self.program_counter += 2;
                         }
                     }
                     0xA1 => {
                         if self.keys[self.reg_v[opcode.x] as usize] == 0 {
-                            self.program_counter = self.program_counter + 4;
+                            self.program_counter += 4;
                         } else {
-                            self.program_counter = self.program_counter + 2;
+                            self.program_counter += 2;
                         }
                     }
                     _ => panic!("Invalid OpCode!"),
@@ -416,24 +416,24 @@ impl Chip8 {
                 match opcode.byte {
                     0x07 => {
                         self.reg_v[opcode.x] = self.delay_timer;
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0x0A => {
                         for index in 0..NUM_KEYS {
                             if self.keys[index] != 0x00 {
                                 self.reg_v[opcode.x] = index as u8;
-                                self.program_counter = self.program_counter + 2;
+                                self.program_counter += 2;
                                 break;
                             }
                         }
                     }
                     0x15 => {
                         self.delay_timer = self.reg_v[opcode.x];
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0x18 => {
                         self.sound_timer = self.reg_v[opcode.x];
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0x1E => {
                         let i = self.reg_i + self.reg_v[opcode.x] as u16;
@@ -444,32 +444,32 @@ impl Chip8 {
                         }
 
                         self.reg_i = i;
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0x29 => {
                         self.reg_i = self.reg_v[opcode.x] as u16 * 0x5;
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0x33 => {
                         let x = self.reg_v[opcode.x];
                         self.memory[self.reg_i as usize] = x / 100;
                         self.memory[(self.reg_i + 1) as usize] = (x / 10) % 10;
                         self.memory[(self.reg_i + 2) as usize] = x % 100 % 10;
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0x55 => {
                         for x in 0..(opcode.x + 1) {
                             self.memory[self.reg_i as usize + x] = self.reg_v[x];
                         }
 
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     0x65 => {
                         for x in 0..(opcode.x + 1) {
                             self.reg_v[x] = self.memory[self.reg_i as usize + x];
                         }
 
-                        self.program_counter = self.program_counter + 2;
+                        self.program_counter += 2;
                     }
                     _ => {}
                 }
