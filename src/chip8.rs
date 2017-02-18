@@ -3,7 +3,10 @@ use super::*;
 #[cfg(not(test))]
 use sdl2::pixels;
 
+use std::sync::{Arc, Mutex};
+
 use opcode::Opcode;
+
 
 #[derive(Debug)]
 pub enum Chip8Error {
@@ -37,7 +40,6 @@ const DISPLAY_WIDTH: usize = 64;
 const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
 const NUM_REGISTERS: usize = 16;
 const MEMORY_SIZE: usize = 4096;
-const STACK_SIZE: usize = 16;
 const NUM_KEYS: usize = 16;
 const PROGRAM_START: usize = 0x200;
 const FONT_SET_SIZE: usize = 80;
@@ -53,16 +55,20 @@ const FONT_SET: [u8; FONT_SET_SIZE] =
 
 pub struct Chip8 {
     reg_v: [u8; NUM_REGISTERS],
-    reg_gfx: [u8; GFX_MEMORY_SIZE],
-    memory: [u8; MEMORY_SIZE],
-    stack: [u16; STACK_SIZE],
-    keys: [u8; NUM_KEYS],
-    stack_pointer: u16,
-    program_counter: u16,
     reg_i: u16,
+
+    reg_gfx: [u8; GFX_MEMORY_SIZE],
+
+    memory: [u8; MEMORY_SIZE],
+
+    keys: [u8; NUM_KEYS],
+
+    stack: Arc<Mutex<Box<stack::IStack>>>,
+
+    program_counter: u16,
+
     delay_timer: u8,
     sound_timer: u8,
-    refresh: bool,
 }
 
 impl Chip8 {
@@ -71,14 +77,12 @@ impl Chip8 {
             reg_v: [0; NUM_REGISTERS],
             reg_gfx: [0; GFX_MEMORY_SIZE],
             memory: [0; MEMORY_SIZE],
-            stack: [0; STACK_SIZE],
+            stack: Arc::new(Mutex::new(Box::new(stack::Stack::new()))),
             keys: [0; NUM_KEYS],
-            stack_pointer: 0,
             program_counter: 0,
             reg_i: 0,
             delay_timer: 0,
             sound_timer: 0,
-            refresh: true,
         }
     }
 
@@ -87,11 +91,8 @@ impl Chip8 {
         self.reg_v = [0; NUM_REGISTERS];
         self.memory = [0; MEMORY_SIZE];
         self.reg_gfx = [0; GFX_MEMORY_SIZE];
-        self.stack = [0; STACK_SIZE];
         self.keys = [0; NUM_KEYS];
-        self.stack_pointer = 0;
         self.reg_i = 0;
-        self.refresh = true;
         for (index, element) in FONT_SET.into_iter().enumerate() {
             self.memory[index] = *element;
         }
@@ -179,11 +180,8 @@ impl Chip8 {
 
             self.cycle();
 
-            if self.refresh {
-                self.render(&mut renderer);
-                renderer.present();
-                self.refresh = false;
-            }
+            self.render(&mut renderer);
+            renderer.present();
 
             let elapsed = start.elapsed();
             let elapsed_duration = chrono::Duration::from_std(elapsed).unwrap();
@@ -243,12 +241,10 @@ impl Chip8 {
 
     fn clear_screen(&mut self) {
         self.reg_gfx = [0; GFX_MEMORY_SIZE];
-        self.refresh = true;
     }
 
     fn display(&mut self, x: usize, y: usize, height: u8) {
         self.reg_v[0xF] = 0x00;
-        self.refresh = true;
         for y_line in 0..height {
             let memory_position = (self.reg_i + y_line as u16) as usize;
             let pixel = self.memory[memory_position];
@@ -276,8 +272,7 @@ impl Chip8 {
                         self.program_counter += 2;
                     }
                     0xEE => {
-                        self.program_counter = self.stack[self.stack_pointer as usize];
-                        self.stack_pointer -= 1;
+                        self.program_counter = self.stack.lock().unwrap().pop();
                         self.program_counter += 2;
                     }
                     _ => {}
@@ -285,8 +280,7 @@ impl Chip8 {
             }
             1 => self.program_counter = opcode.address,
             2 => {
-                self.stack_pointer += 1;
-                self.stack[self.stack_pointer as usize] = self.program_counter;
+                self.stack.lock().unwrap().push(self.program_counter);
                 self.program_counter = opcode.address;
             }
             3 => {
@@ -506,8 +500,8 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x02FC);
-        assert_eq!(chip.stack_pointer, 0x0001);
-        assert_eq!(chip.stack[chip.stack_pointer as usize], 0x200);
+        assert_eq!(chip.stack.lock().unwrap().get_current(), 0x0001);
+        assert_eq!(chip.stack.lock().unwrap().get(), 0x200);
     }
 
     #[test]
@@ -521,7 +515,7 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.stack_pointer, 0x0000);
+        assert_eq!(chip.stack.lock().unwrap().get_current(), 0x0000);
     }
 
     #[test]
