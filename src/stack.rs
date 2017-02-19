@@ -4,7 +4,8 @@ pub trait IStack {
     fn push(&mut self, reg: u16);
     fn pop(&mut self) -> u16;
     fn get(&self) -> u16;
-    fn get_current(&self) -> u16;
+    fn get_pointer(&self) -> u16;
+    fn get_stack(&self) -> &[u16];
 }
 
 pub struct Stack {
@@ -37,7 +38,35 @@ impl IStack for Stack {
         self.stack[self.stack_pointer as usize]
     }
 
-    fn get_current(&self) -> u16 {
+    fn get_pointer(&self) -> u16 {
         self.stack_pointer
+    }
+
+    fn get_stack(&self) -> &[u16] {
+        &self.stack
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stack_push() {
+        let mut stack = Stack::new();
+        assert_eq!(stack.get_pointer(), 0);
+        stack.push(0x1234);
+        assert_eq!(stack.get_pointer(), 1);
+        assert_eq!(stack.get(), 0x1234);
+    }
+
+    #[test]
+    fn stack_pop() {
+        let mut stack = Stack::new();
+        assert_eq!(stack.get_pointer(), 0);
+        stack.push(0x1234);
+        assert_eq!(stack.get_pointer(), 1);
+        assert_eq!(stack.pop(), 0x1234);
+        assert_eq!(stack.get_pointer(), 0);
     }
 }

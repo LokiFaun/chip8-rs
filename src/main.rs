@@ -9,6 +9,7 @@ extern crate chrono;
 mod opcode;
 mod chip8;
 mod stack;
+mod error;
 
 #[cfg(not(test))]
 fn main() {
@@ -28,7 +29,7 @@ fn main() {
             chip.load_rom(rom);
             if let Err(err) = chip.run() {
                 match err {
-                    chip8::Chip8Error::Message(msg) => {
+                    error::Chip8Error::Message(msg) => {
                         println!("Error running chip8: {}", msg);
                     }
                     _ => {

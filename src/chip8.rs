@@ -6,35 +6,10 @@ use sdl2::pixels;
 use std::sync::{Arc, Mutex};
 
 use opcode::Opcode;
-
-
-#[derive(Debug)]
-pub enum Chip8Error {
-    IntegerOrSdlError,
-    WindowBuildError,
-    Message(String),
-}
-
-impl From<String> for Chip8Error {
-    fn from(msg: String) -> Chip8Error {
-        Chip8Error::Message(msg)
-    }
-}
-
-impl From<sdl2::IntegerOrSdlError> for Chip8Error {
-    fn from(_: sdl2::IntegerOrSdlError) -> Chip8Error {
-        Chip8Error::IntegerOrSdlError
-    }
-}
-
-impl From<sdl2::video::WindowBuildError> for Chip8Error {
-    fn from(_: sdl2::video::WindowBuildError) -> Chip8Error {
-        Chip8Error::WindowBuildError
-    }
-}
+use error::Chip8Error;
 
 #[cfg(not(test))]
-const PIXEL_SIZE: usize = 5;
+const PIXEL_SIZE: usize = 20;
 const DISPLAY_HEIGHT: usize = 32;
 const DISPLAY_WIDTH: usize = 64;
 const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
@@ -500,7 +475,7 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x02FC);
-        assert_eq!(chip.stack.lock().unwrap().get_current(), 0x0001);
+        assert_eq!(chip.stack.lock().unwrap().get_pointer(), 0x0001);
         assert_eq!(chip.stack.lock().unwrap().get(), 0x200);
     }
 
@@ -515,7 +490,7 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.stack.lock().unwrap().get_current(), 0x0000);
+        assert_eq!(chip.stack.lock().unwrap().get_pointer(), 0x0000);
     }
 
     #[test]
