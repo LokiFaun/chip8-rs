@@ -7,12 +7,12 @@ use std::sync::{Arc, Mutex};
 
 use opcode::Opcode;
 use error::Chip8Error;
+use gfx::GfxMemory;
 
 #[cfg(not(test))]
 const PIXEL_SIZE: usize = 20;
-const DISPLAY_HEIGHT: usize = 32;
-const DISPLAY_WIDTH: usize = 64;
-const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
+pub const DISPLAY_HEIGHT: usize = 32;
+pub const DISPLAY_WIDTH: usize = 64;
 const NUM_REGISTERS: usize = 16;
 const MEMORY_SIZE: usize = 4096;
 const NUM_KEYS: usize = 16;
@@ -32,7 +32,7 @@ pub struct Chip8 {
     reg_v: [u8; NUM_REGISTERS],
     reg_i: u16,
 
-    reg_gfx: [u8; GFX_MEMORY_SIZE],
+    reg_gfx: Arc<Mutex<GfxMemory>>,
 
     memory: [u8; MEMORY_SIZE],
 
@@ -49,11 +49,11 @@ pub struct Chip8 {
 impl Chip8 {
     pub fn new() -> Chip8 {
         Chip8 {
-            reg_v: [0; NUM_REGISTERS],
-            reg_gfx: [0; GFX_MEMORY_SIZE],
-            memory: [0; MEMORY_SIZE],
+            reg_gfx: Arc::new(Mutex::new(GfxMemory::new())),
             stack: Arc::new(Mutex::new(Box::new(stack::Stack::new()))),
             keys: [0; NUM_KEYS],
+            memory: [0; MEMORY_SIZE],
+            reg_v: [0; NUM_REGISTERS],
             program_counter: 0,
             reg_i: 0,
             delay_timer: 0,
@@ -65,7 +65,7 @@ impl Chip8 {
         self.program_counter = PROGRAM_START as u16;
         self.reg_v = [0; NUM_REGISTERS];
         self.memory = [0; MEMORY_SIZE];
-        self.reg_gfx = [0; GFX_MEMORY_SIZE];
+        self.reg_gfx.as_ref().lock().unwrap().clear();
         self.keys = [0; NUM_KEYS];
         self.reg_i = 0;
         for (index, element) in FONT_SET.into_iter().enumerate() {
@@ -177,7 +177,7 @@ impl Chip8 {
         for y in 0..DISPLAY_HEIGHT {
             for x in 0..DISPLAY_WIDTH {
                 let index = (y * DISPLAY_WIDTH) + x;
-                let color = if self.reg_gfx[index] == 0 {
+                let color = if self.reg_gfx.as_ref().lock().unwrap()[index] == 0 {
                     pixels::Color::RGB(0, 0, 0)
                 } else {
                     pixels::Color::RGB(255, 255, 255)
@@ -214,10 +214,6 @@ impl Chip8 {
         Opcode::new(opcode)
     }
 
-    fn clear_screen(&mut self) {
-        self.reg_gfx = [0; GFX_MEMORY_SIZE];
-    }
-
     fn display(&mut self, x: usize, y: usize, height: u8) {
         self.reg_v[0xF] = 0x00;
         for y_line in 0..height {
@@ -228,11 +224,15 @@ impl Chip8 {
                     let gfx_position = (self.reg_v[x] as usize + x_line +
                                         ((self.reg_v[y] as usize + y_line as usize) *
                                          DISPLAY_WIDTH)) %
-                                       GFX_MEMORY_SIZE;
-                    let current_pixel = self.reg_gfx[gfx_position as usize];
+                                       gfx::GFX_MEMORY_SIZE;
+                    let current_pixel =
+                        self.reg_gfx.as_ref().lock().unwrap()[gfx_position as usize];
                     self.reg_v[0xF] = current_pixel & 0x01;
 
-                    self.reg_gfx[gfx_position as usize] = !current_pixel;
+                    self.reg_gfx
+                        .as_ref()
+                        .lock()
+                        .unwrap()[gfx_position as usize] = !current_pixel;
                 }
             }
         }
@@ -243,7 +243,7 @@ impl Chip8 {
             0 => {
                 match opcode.byte {
                     0xE0 => {
-                        self.clear_screen();
+                        self.reg_gfx.as_ref().lock().unwrap().clear();
                         self.program_counter += 2;
                     }
                     0xEE => {
@@ -1089,22 +1089,22 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_gfx[0], 0xFF);
-        assert_eq!(chip.reg_gfx[1], 0xFF);
-        assert_eq!(chip.reg_gfx[2], 0xFF);
-        assert_eq!(chip.reg_gfx[3], 0xFF);
-        assert_eq!(chip.reg_gfx[4], 0x00);
-        assert_eq!(chip.reg_gfx[5], 0x00);
-        assert_eq!(chip.reg_gfx[6], 0x00);
-        assert_eq!(chip.reg_gfx[7], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[0], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[1], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[2], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[3], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[4], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[5], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[6], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[7], 0x00);
 
-        assert_eq!(chip.reg_gfx[64 + 0], 0xFF);
-        assert_eq!(chip.reg_gfx[64 + 1], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 2], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 3], 0xFF);
-        assert_eq!(chip.reg_gfx[64 + 4], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 5], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 6], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 7], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 0], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 1], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 2], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 3], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 4], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 5], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 6], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 7], 0x00);
     }
 }

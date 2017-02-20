@@ -10,6 +10,7 @@ mod opcode;
 mod chip8;
 mod stack;
 mod error;
+mod gfx;
 
 #[cfg(not(test))]
 fn main() {
