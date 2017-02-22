@@ -11,6 +11,7 @@ mod chip8;
 mod stack;
 mod error;
 mod gfx;
+mod register;
 
 #[cfg(not(test))]
 fn main() {
