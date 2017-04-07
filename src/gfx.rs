@@ -1,8 +1,7 @@
 use super::*;
-use std::ops::Index;
-use std::ops::IndexMut;
+use std::ops::{Index, IndexMut};
 
-pub const GFX_MEMORY_SIZE: usize = chip8::DISPLAY_HEIGHT * chip8::DISPLAY_WIDTH;
+pub const GFX_MEMORY_SIZE: usize = renderer::DISPLAY_HEIGHT * renderer::DISPLAY_WIDTH;
 
 pub struct GfxMemory {
     memory: [u8; GFX_MEMORY_SIZE],

@@ -24,3 +24,9 @@ impl From<sdl2::video::WindowBuildError> for Chip8Error {
         Chip8Error::WindowBuildError
     }
 }
+
+impl From<std::boxed::Box<std::any::Any + std::marker::Send>> for Chip8Error {
+    fn from(err: std::boxed::Box<std::any::Any + std::marker::Send>) -> Chip8Error {
+        Chip8Error::Message(format!("{:?}", err))
+    }
+}

@@ -12,6 +12,8 @@ mod stack;
 mod error;
 mod gfx;
 mod register;
+mod renderer;
+mod keyboard;
 
 #[cfg(not(test))]
 fn main() {

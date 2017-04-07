@@ -1,25 +1,18 @@
 use super::*;
 
-#[cfg(not(test))]
-use sdl2::pixels;
-
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 
 use opcode::Opcode;
 use error::Chip8Error;
 use gfx::GfxMemory;
 use register::Register;
+use renderer::Renderer;
+use keyboard::Keyboard;
 
 #[cfg(not(test))]
-const PIXEL_SIZE: usize = 20;
-pub const DISPLAY_HEIGHT: usize = 32;
-pub const DISPLAY_WIDTH: usize = 64;
 const MEMORY_SIZE: usize = 4096;
-const NUM_KEYS: usize = 16;
 const PROGRAM_START: usize = 0x200;
 const FONT_SET_SIZE: usize = 80;
-const INSTRUCTIONS_PER_SECOND: i64 = 840;
-const NANO_SECONDS_PER_SECOND: i64 = 1000 * 1000 * 1000;
 const FONT_SET: [u8; FONT_SET_SIZE] =
     [0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70, 0xF0, 0x10, 0xF0, 0x80, 0xF0,
      0xF0, 0x10, 0xF0, 0x10, 0xF0, 0x90, 0x90, 0xF0, 0x10, 0x10, 0xF0, 0x80, 0xF0, 0x10, 0xF0,
@@ -31,11 +24,11 @@ const FONT_SET: [u8; FONT_SET_SIZE] =
 pub struct Chip8 {
     reg_v: Arc<Mutex<Register>>,
     reg_gfx: Arc<Mutex<GfxMemory>>,
-    stack: Arc<Mutex<Box<stack::IStack>>>,
+    stack: Arc<Mutex<stack::Stack>>,
+    shutdown: Arc<(Mutex<bool>, Condvar)>,
+    keys: Arc<Mutex<Keyboard>>,
 
     memory: [u8; MEMORY_SIZE],
-
-    keys: [u8; NUM_KEYS],
 
     program_counter: u16,
 
@@ -45,11 +38,15 @@ pub struct Chip8 {
 
 impl Chip8 {
     pub fn new() -> Chip8 {
+        let shutdown = Arc::new((Mutex::new(false), Condvar::new()));
+        let gfx = Arc::new(Mutex::new(GfxMemory::new()));
+        let keys = Arc::new(Mutex::new(Keyboard::new()));
         Chip8 {
-            reg_gfx: Arc::new(Mutex::new(GfxMemory::new())),
+            stack: Arc::new(Mutex::new(stack::Stack::new())),
             reg_v: Arc::new(Mutex::new(Register::new())),
-            stack: Arc::new(Mutex::new(Box::new(stack::Stack::new()))),
-            keys: [0; NUM_KEYS],
+            reg_gfx: gfx.clone(),
+            shutdown: shutdown.clone(),
+            keys: keys.clone(),
             memory: [0; MEMORY_SIZE],
             program_counter: 0,
             delay_timer: 0,
@@ -62,7 +59,6 @@ impl Chip8 {
         self.reg_gfx.as_ref().lock().unwrap().clear();
         self.program_counter = PROGRAM_START as u16;
         self.memory = [0; MEMORY_SIZE];
-        self.keys = [0; NUM_KEYS];
         for (index, element) in FONT_SET.into_iter().enumerate() {
             self.memory[index] = *element;
         }
@@ -76,121 +72,34 @@ impl Chip8 {
 
     #[cfg(not(test))]
     pub fn run(&mut self) -> Result<(), Chip8Error> {
-        use sdl2::event::Event;
-        use sdl2::keyboard::Keycode;
-
-        let sdl_context = try!(sdl2::init());
-        let video_subsys = try!(sdl_context.video());
-        let window = try!(video_subsys.window("chip8",
-                    (DISPLAY_WIDTH * PIXEL_SIZE) as u32,
-                    (DISPLAY_HEIGHT * PIXEL_SIZE) as u32)
-            .position_centered()
-            .opengl()
-            .build());
-
-        let mut renderer = try!(window.renderer().build());
-        renderer.set_draw_color(pixels::Color::RGB(0, 0, 0));
-        renderer.clear();
-        renderer.present();
-
-        let mut events = try!(sdl_context.event_pump());
-        'main: loop {
-            let start = std::time::Instant::now();
-            for event in events.poll_iter() {
-                match event {
-                    Event::Quit { .. } => break 'main,
-                    Event::KeyDown { keycode: Some(keycode), .. } => {
-                        match keycode {
-                            Keycode::Escape => break 'main,
-                            Keycode::Num1 => self.keys[0x1] = 1,
-                            Keycode::Num2 => self.keys[0x2] = 1,
-                            Keycode::Num3 => self.keys[0x3] = 1,
-                            Keycode::Num4 => self.keys[0xC] = 1,
-                            Keycode::Q => self.keys[0x4] = 1,
-                            Keycode::W => self.keys[0x5] = 1,
-                            Keycode::E => self.keys[0x6] = 1,
-                            Keycode::R => self.keys[0xD] = 1,
-                            Keycode::A => self.keys[0x7] = 1,
-                            Keycode::S => self.keys[0x8] = 1,
-                            Keycode::D => self.keys[0x9] = 1,
-                            Keycode::F => self.keys[0xE] = 1,
-                            Keycode::Y => self.keys[0xA] = 1,
-                            Keycode::X => self.keys[0x0] = 1,
-                            Keycode::C => self.keys[0xB] = 1,
-                            Keycode::V => self.keys[0xF] = 1,
-
-                            _ => {}
-                        }
+        let gfx = self.reg_gfx.clone();
+        let keys = self.keys.clone();
+        let rendering = std::thread::spawn(move || {
+            let renderer = Renderer::new(gfx, keys);
+            if let Err(err) = renderer.run() {
+                match err {
+                    error::Chip8Error::Message(msg) => {
+                        println!("Error rendering: {}", msg);
                     }
-                    Event::KeyUp { keycode: Some(keycode), .. } => {
-                        match keycode {
-                            Keycode::Escape => break 'main,
-                            Keycode::Num1 => self.keys[0x1] = 0,
-                            Keycode::Num2 => self.keys[0x2] = 0,
-                            Keycode::Num3 => self.keys[0x3] = 0,
-                            Keycode::Num4 => self.keys[0xC] = 0,
-                            Keycode::Q => self.keys[0x4] = 0,
-                            Keycode::W => self.keys[0x5] = 0,
-                            Keycode::E => self.keys[0x6] = 0,
-                            Keycode::R => self.keys[0xD] = 0,
-                            Keycode::A => self.keys[0x7] = 0,
-                            Keycode::S => self.keys[0x8] = 0,
-                            Keycode::D => self.keys[0x9] = 0,
-                            Keycode::F => self.keys[0xE] = 0,
-                            Keycode::Y => self.keys[0xA] = 0,
-                            Keycode::X => self.keys[0x0] = 0,
-                            Keycode::C => self.keys[0xB] = 0,
-                            Keycode::V => self.keys[0xF] = 0,
-                            _ => {}
-                        }
+                    _ => {
+                        println!("Error rendering: {:?}", err);
                     }
-                    _ => {}
                 }
             }
+        });
 
-            self.cycle();
+        self.cycle();
 
-            self.render(&mut renderer);
-            renderer.present();
-
-            let elapsed = start.elapsed();
-            let elapsed_duration = chrono::Duration::from_std(elapsed).unwrap();
-            let cycle_time = chrono::Duration::nanoseconds(NANO_SECONDS_PER_SECOND /
-                                                           INSTRUCTIONS_PER_SECOND);
-            if cycle_time > elapsed_duration {
-                let sleep_time = cycle_time - elapsed_duration;
-                let sleep_duration = sleep_time.to_std().unwrap();
-                std::thread::sleep(sleep_duration);
-            }
-        }
-
+        try!(rendering.join());
+        let &(ref lock, ref condition) = &*self.shutdown;
+        let mut stopped = lock.lock().unwrap();
+        *stopped = true;
+        condition.notify_all();
         Ok(())
-    }
-
-    #[cfg(not(test))]
-    fn render(&self, renderer: &mut sdl2::render::Renderer) {
-        for y in 0..DISPLAY_HEIGHT {
-            for x in 0..DISPLAY_WIDTH {
-                let index = (y * DISPLAY_WIDTH) + x;
-                let color = if self.reg_gfx.as_ref().lock().unwrap()[index] == 0 {
-                    pixels::Color::RGB(0, 0, 0)
-                } else {
-                    pixels::Color::RGB(255, 255, 255)
-                };
-
-                let rectangle = sdl2::rect::Rect::new((x * PIXEL_SIZE) as i32,
-                                                      (y * PIXEL_SIZE) as i32,
-                                                      PIXEL_SIZE as u32,
-                                                      PIXEL_SIZE as u32);
-                renderer.set_draw_color(color);
-                let _ = renderer.fill_rect(rectangle);
-            }
-        }
     }
 
     fn cycle(&mut self) {
         let opcode = self.fetch_opcode();
-        println!("Executing Opcode: {}", opcode);
         self.execute_opcode(opcode);
 
         if self.delay_timer > 0 {
@@ -223,7 +132,8 @@ impl Chip8 {
                     let x = reg_v.lock().unwrap()[x];
                     let y = reg_v.lock().unwrap()[y];
                     let gfx_position = (x as usize + x_line +
-                                        ((y as usize + y_line as usize) * DISPLAY_WIDTH)) %
+                                        ((y as usize + y_line as usize) *
+                                         renderer::DISPLAY_WIDTH)) %
                                        gfx::GFX_MEMORY_SIZE;
                     let current_pixel = reg_gfx.lock().unwrap()[gfx_position as usize];
                     reg_v.lock().unwrap()[0xF] = current_pixel & 0x01;
@@ -375,14 +285,16 @@ impl Chip8 {
             0xE => {
                 match opcode.byte {
                     0x9E => {
-                        if self.keys[reg_v.lock().unwrap()[opcode.x] as usize] != 0 {
+                        if self.keys.lock().unwrap()[reg_v.lock().unwrap()[opcode.x] as usize] !=
+                           0 {
                             self.program_counter += 4;
                         } else {
                             self.program_counter += 2;
                         }
                     }
                     0xA1 => {
-                        if self.keys[reg_v.lock().unwrap()[opcode.x] as usize] == 0 {
+                        if self.keys.lock().unwrap()[reg_v.lock().unwrap()[opcode.x] as usize] ==
+                           0 {
                             self.program_counter += 4;
                         } else {
                             self.program_counter += 2;
@@ -398,8 +310,8 @@ impl Chip8 {
                         self.program_counter += 2;
                     }
                     0x0A => {
-                        for index in 0..NUM_KEYS {
-                            if self.keys[index] != 0x00 {
+                        for index in 0..keyboard::NUM_KEYS {
+                            if self.keys.lock().unwrap()[index] != 0x00 {
                                 reg_v.lock().unwrap()[opcode.x] = index as u8;
                                 self.program_counter += 2;
                                 break;
