@@ -75,17 +75,7 @@ impl Chip8 {
         let gfx = self.reg_gfx.clone();
         let keys = self.keys.clone();
         let rendering = std::thread::spawn(move || {
-            let renderer = Renderer::new(gfx, keys);
-            if let Err(err) = renderer.run() {
-                match err {
-                    error::Chip8Error::Message(msg) => {
-                        println!("Error rendering: {}", msg);
-                    }
-                    _ => {
-                        println!("Error rendering: {:?}", err);
-                    }
-                }
-            }
+            Renderer::start(gfx, keys);
         });
 
         self.cycle();

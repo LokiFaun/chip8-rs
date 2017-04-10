@@ -34,13 +34,13 @@ fn main() {
             if let Err(err) = chip.run() {
                 match err {
                     error::Chip8Error::Message(msg) => {
-                        println!("Error running chip8: {}", msg);
+                        println!("Error running chip: {}", msg);
                     }
                     _ => {
-                        println!("Error running chip8: {:?}", err);
+                        println!("Error running chip: {:?}", err);
                     }
                 }
-            };
+            }
         }
     } else {
         println!("Usage: chip8 <rom>");

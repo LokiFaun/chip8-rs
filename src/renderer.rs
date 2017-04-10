@@ -26,6 +26,20 @@ impl Renderer {
         }
     }
 
+    pub fn start(gfx: Arc<Mutex<GfxMemory>>, keyboard: Arc<Mutex<Keyboard>>) {
+        let renderer = Renderer::new(gfx, keyboard);
+        if let Err(err) = renderer.run() {
+            match err {
+                error::Chip8Error::Message(msg) => {
+                    println!("Error rendering: {}", msg);
+                }
+                _ => {
+                    println!("Error rendering: {:?}", err);
+                }
+            }
+        }
+    }
+
     pub fn run(&self) -> Result<(), Chip8Error> {
         use sdl2::event::Event;
         use sdl2::keyboard::Keycode;
