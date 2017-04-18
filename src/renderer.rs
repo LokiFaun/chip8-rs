@@ -77,24 +77,30 @@ impl Renderer {
                 }
             }
 
-            for y in 0..DISPLAY_HEIGHT {
-                for x in 0..DISPLAY_WIDTH {
-                    let index = (y * DISPLAY_WIDTH) + x;
-                    let color = if self.gfx.as_ref().lock().unwrap()[index] == 0 {
-                        sdl2::pixels::Color::RGB(0, 0, 0)
-                    } else {
-                        sdl2::pixels::Color::RGB(255, 255, 255)
-                    };
-
-                    let rectangle = sdl2::rect::Rect::new((x * PIXEL_SIZE) as i32,
-                                                          (y * PIXEL_SIZE) as i32,
-                                                          PIXEL_SIZE as u32,
-                                                          PIXEL_SIZE as u32);
-                    renderer.set_draw_color(color);
-                    let _ = renderer.fill_rect(rectangle);
-                }
-            }
+            try!(self.render(&mut renderer));
             renderer.present();
+        }
+
+        Ok(())
+    }
+
+    fn render<'a>(&self, renderer: &mut sdl2::render::Renderer<'a>) -> Result<(), String> {
+        for y in 0..DISPLAY_HEIGHT {
+            for x in 0..DISPLAY_WIDTH {
+                let index = (y * DISPLAY_WIDTH) + x;
+                let color = if self.gfx.as_ref().lock().unwrap()[index] == 0 {
+                    sdl2::pixels::Color::RGB(0, 0, 0)
+                } else {
+                    sdl2::pixels::Color::RGB(255, 255, 255)
+                };
+
+                let rectangle = sdl2::rect::Rect::new((x * PIXEL_SIZE) as i32,
+                                                      (y * PIXEL_SIZE) as i32,
+                                                      PIXEL_SIZE as u32,
+                                                      PIXEL_SIZE as u32);
+                renderer.set_draw_color(color);
+                try!(renderer.fill_rect(rectangle));
+            }
         }
 
         Ok(())
@@ -102,24 +108,24 @@ impl Renderer {
 
     fn key_press(&self, keycode: sdl2::keyboard::Keycode, up: u8) {
         use sdl2::keyboard::Keycode;
+        let mut keys = self.keys.lock().unwrap();
         match keycode {
-            Keycode::Num1 => self.keys.lock().unwrap()[0x1] = up,
-            Keycode::Num2 => self.keys.lock().unwrap()[0x2] = up,
-            Keycode::Num3 => self.keys.lock().unwrap()[0x3] = up,
-            Keycode::Num4 => self.keys.lock().unwrap()[0xC] = up,
-            Keycode::Q => self.keys.lock().unwrap()[0x4] = up,
-            Keycode::W => self.keys.lock().unwrap()[0x5] = up,
-            Keycode::E => self.keys.lock().unwrap()[0x6] = up,
-            Keycode::R => self.keys.lock().unwrap()[0xD] = up,
-            Keycode::A => self.keys.lock().unwrap()[0x7] = up,
-            Keycode::S => self.keys.lock().unwrap()[0x8] = up,
-            Keycode::D => self.keys.lock().unwrap()[0x9] = up,
-            Keycode::F => self.keys.lock().unwrap()[0xE] = up,
-            Keycode::Y => self.keys.lock().unwrap()[0xA] = up,
-            Keycode::X => self.keys.lock().unwrap()[0x0] = up,
-            Keycode::C => self.keys.lock().unwrap()[0xB] = up,
-            Keycode::V => self.keys.lock().unwrap()[0xF] = up,
-
+            Keycode::Num1 => keys[0x1] = up,
+            Keycode::Num2 => keys[0x2] = up,
+            Keycode::Num3 => keys[0x3] = up,
+            Keycode::Num4 => keys[0xC] = up,
+            Keycode::Q => keys[0x4] = up,
+            Keycode::W => keys[0x5] = up,
+            Keycode::E => keys[0x6] = up,
+            Keycode::R => keys[0xD] = up,
+            Keycode::A => keys[0x7] = up,
+            Keycode::S => keys[0x8] = up,
+            Keycode::D => keys[0x9] = up,
+            Keycode::F => keys[0xE] = up,
+            Keycode::Y => keys[0xA] = up,
+            Keycode::X => keys[0x0] = up,
+            Keycode::C => keys[0xB] = up,
+            Keycode::V => keys[0xF] = up,
             _ => {}
         }
     }

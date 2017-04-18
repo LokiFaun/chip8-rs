@@ -10,11 +10,6 @@ impl Keyboard {
     pub fn new() -> Keyboard {
         Keyboard { keys: [0; NUM_KEYS] }
     }
-
-    #[cfg(test)]
-    pub fn get(&self) -> &[u8] {
-        &self.keys
-    }
 }
 
 impl Index<usize> for Keyboard {
@@ -29,3 +24,13 @@ impl IndexMut<usize> for Keyboard {
         &mut self.keys[i]
     }
 }
+
+mod tests {
+    #[test]
+    fn key_set_get() {
+        let mut keyboard = Keyboard::new();
+        keyboard[0] = 0x1;
+        assert_eq!(keyboard[0], 0x1);
+    }
+}
+
