@@ -25,6 +25,11 @@ impl Stack {
     }
 
     #[cfg(test)]
+    pub fn current(&self) -> u16 {
+        self.stack[self.stack_pointer as usize]
+    }
+
+    #[cfg(test)]
     pub fn get_pointer(&self) -> u16 {
         self.stack_pointer
     }
@@ -40,7 +45,7 @@ mod tests {
         assert_eq!(stack.get_pointer(), 0);
         stack.push(0x1234);
         assert_eq!(stack.get_pointer(), 1);
-        assert_eq!(stack.get(), 0x1234);
+        assert_eq!(stack.current(), 0x1234);
     }
 
     #[test]

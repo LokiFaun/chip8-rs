@@ -1,8 +1,5 @@
 use super::*;
 
-#[cfg(not(test))]
-use sdl2::pixels;
-
 use std::sync::{Arc, Mutex};
 
 use gfx::GfxMemory;
@@ -46,15 +43,16 @@ impl Renderer {
 
         let sdl_context = try!(sdl2::init());
         let video_subsys = try!(sdl_context.video());
-        let window = try!(video_subsys.window("chip8",
-                    (DISPLAY_WIDTH * PIXEL_SIZE) as u32,
-                    (DISPLAY_HEIGHT * PIXEL_SIZE) as u32)
-            .position_centered()
-            .opengl()
-            .build());
+        let window = try!(video_subsys
+                              .window("chip8",
+                                      (DISPLAY_WIDTH * PIXEL_SIZE) as u32,
+                                      (DISPLAY_HEIGHT * PIXEL_SIZE) as u32)
+                              .position_centered()
+                              .opengl()
+                              .build());
 
         let mut renderer = try!(window.renderer().build());
-        renderer.set_draw_color(pixels::Color::RGB(0, 0, 0));
+        renderer.set_draw_color(sdl2::pixels::Color::RGB(0, 0, 0));
         renderer.clear();
         renderer.present();
 
@@ -79,14 +77,13 @@ impl Renderer {
                 }
             }
 
-
             for y in 0..DISPLAY_HEIGHT {
                 for x in 0..DISPLAY_WIDTH {
                     let index = (y * DISPLAY_WIDTH) + x;
                     let color = if self.gfx.as_ref().lock().unwrap()[index] == 0 {
-                        pixels::Color::RGB(0, 0, 0)
+                        sdl2::pixels::Color::RGB(0, 0, 0)
                     } else {
-                        pixels::Color::RGB(255, 255, 255)
+                        sdl2::pixels::Color::RGB(255, 255, 255)
                     };
 
                     let rectangle = sdl2::rect::Rect::new((x * PIXEL_SIZE) as i32,
@@ -127,3 +124,4 @@ impl Renderer {
         }
     }
 }
+

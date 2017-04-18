@@ -3,13 +3,10 @@ use super::*;
 use std::sync::{Arc, Mutex, Condvar};
 
 use opcode::Opcode;
-use error::Chip8Error;
 use gfx::GfxMemory;
 use register::Register;
-use renderer::Renderer;
 use keyboard::Keyboard;
 
-#[cfg(not(test))]
 const MEMORY_SIZE: usize = 4096;
 const PROGRAM_START: usize = 0x200;
 const FONT_SET_SIZE: usize = 80;
@@ -71,12 +68,10 @@ impl Chip8 {
     }
 
     #[cfg(not(test))]
-    pub fn run(&mut self) -> Result<(), Chip8Error> {
+    pub fn run(&mut self) -> Result<(), error::Chip8Error> {
         let gfx = self.reg_gfx.clone();
         let keys = self.keys.clone();
-        let rendering = std::thread::spawn(move || {
-            Renderer::start(gfx, keys);
-        });
+        let rendering = std::thread::spawn(move || { renderer::Renderer::start(gfx, keys); });
 
         self.cycle();
 
@@ -128,8 +123,7 @@ impl Chip8 {
                     let current_pixel = reg_gfx.lock().unwrap()[gfx_position as usize];
                     reg_v.lock().unwrap()[0xF] = current_pixel & 0x01;
 
-                    reg_gfx.lock()
-                        .unwrap()[gfx_position as usize] = !current_pixel;
+                    reg_gfx.lock().unwrap()[gfx_position as usize] = !current_pixel;
                 }
             }
         }
@@ -393,7 +387,7 @@ mod tests {
 
         assert_eq!(chip.program_counter, 0x02FC);
         assert_eq!(chip.stack.lock().unwrap().get_pointer(), 0x0001);
-        assert_eq!(chip.stack.lock().unwrap().get(), 0x200);
+        assert_eq!(chip.stack.lock().unwrap().current(), 0x200);
     }
 
     #[test]
@@ -806,7 +800,7 @@ mod tests {
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v.as_ref().lock().unwrap()[0] = 0x3;
-        chip.keys[3] = 0x1;
+        chip.keys.as_ref().lock().unwrap()[3] = 0x1;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0204);
@@ -846,7 +840,7 @@ mod tests {
         chip.initialize();
         chip.load_rom(rom);
         chip.reg_v.as_ref().lock().unwrap()[0] = 0x3;
-        chip.keys[3] = 0x1;
+        chip.keys.as_ref().lock().unwrap()[3] = 0x1;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
@@ -877,7 +871,7 @@ mod tests {
         chip.cycle();
         assert_eq!(chip.program_counter, 0x0200);
 
-        chip.keys[5] = 0x1;
+        chip.keys.as_ref().lock().unwrap()[5] = 0x1;
         chip.cycle();
 
         assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x05);
@@ -1025,3 +1019,4 @@ mod tests {
         assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 7], 0x00);
     }
 }
+
