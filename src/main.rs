@@ -12,8 +12,13 @@ mod stack;
 mod error;
 mod gfx;
 mod register;
-mod renderer;
 mod keyboard;
+mod memory;
+#[cfg(not(test))]
+mod renderer;
+
+pub const DISPLAY_HEIGHT: usize = 32;
+pub const DISPLAY_WIDTH: usize = 64;
 
 #[cfg(not(test))]
 fn main() {

@@ -25,7 +25,10 @@ impl IndexMut<usize> for Keyboard {
     }
 }
 
+#[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn key_set_get() {
         let mut keyboard = Keyboard::new();

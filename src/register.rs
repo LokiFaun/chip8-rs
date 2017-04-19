@@ -20,11 +20,6 @@ impl Register {
         self.reg_v = [0; NUM_REGISTERS];
         self.reg_i = 0;
     }
-
-    #[cfg(test)]
-    pub fn get(&self) -> &[u8] {
-        &self.reg_v
-    }
 }
 
 impl Index<usize> for Register {

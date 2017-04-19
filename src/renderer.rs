@@ -6,8 +6,6 @@ use gfx::GfxMemory;
 use keyboard::Keyboard;
 use error::Chip8Error;
 
-pub const DISPLAY_HEIGHT: usize = 32;
-pub const DISPLAY_WIDTH: usize = 64;
 const PIXEL_SIZE: usize = 20;
 
 pub struct Renderer {

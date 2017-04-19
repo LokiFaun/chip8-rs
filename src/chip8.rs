@@ -6,8 +6,8 @@ use opcode::Opcode;
 use gfx::GfxMemory;
 use register::Register;
 use keyboard::Keyboard;
+use memory::Memory;
 
-const MEMORY_SIZE: usize = 4096;
 const PROGRAM_START: usize = 0x200;
 const FONT_SET_SIZE: usize = 80;
 const FONT_SET: [u8; FONT_SET_SIZE] =
@@ -22,10 +22,10 @@ pub struct Chip8 {
     reg_v: Arc<Mutex<Register>>,
     reg_gfx: Arc<Mutex<GfxMemory>>,
     stack: Arc<Mutex<stack::Stack>>,
-    shutdown: Arc<(Mutex<bool>, Condvar)>,
     keys: Arc<Mutex<Keyboard>>,
+    memory: Memory,
 
-    memory: [u8; MEMORY_SIZE],
+    shutdown: Arc<(Mutex<bool>, Condvar)>,
 
     program_counter: u16,
 
@@ -44,7 +44,7 @@ impl Chip8 {
             reg_gfx: gfx.clone(),
             shutdown: shutdown.clone(),
             keys: keys.clone(),
-            memory: [0; MEMORY_SIZE],
+            memory: Memory::new(),
             program_counter: 0,
             delay_timer: 0,
             sound_timer: 0,
@@ -55,16 +55,11 @@ impl Chip8 {
         self.reg_v.as_ref().lock().unwrap().clear();
         self.reg_gfx.as_ref().lock().unwrap().clear();
         self.program_counter = PROGRAM_START as u16;
-        self.memory = [0; MEMORY_SIZE];
-        for (index, element) in FONT_SET.into_iter().enumerate() {
-            self.memory[index] = *element;
-        }
+        self.memory.store(0, &FONT_SET);
     }
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
-        for (index, element) in rom.into_iter().enumerate() {
-            self.memory[index + PROGRAM_START] = element;
-        }
+        self.memory.store(PROGRAM_START, &rom)
     }
 
     #[cfg(not(test))]
@@ -98,9 +93,7 @@ impl Chip8 {
 
     fn fetch_opcode(&self) -> Opcode {
         let index = self.program_counter as usize;
-        let a = self.memory[index] as u16;
-        let b = self.memory[index + 1] as u16;
-        let opcode = (a << 8) + b;
+        let opcode = self.memory.load16(index);
         Opcode::new(opcode)
     }
 
@@ -111,14 +104,13 @@ impl Chip8 {
         let reg_gfx = self.reg_gfx.clone();
         for y_line in 0..height {
             let memory_position = (reg_i + y_line as u16) as usize;
-            let pixel = self.memory[memory_position];
+            let pixel = self.memory.load8(memory_position);
             for x_line in 0..8 {
                 if (pixel & (0x80 >> x_line)) != 0x00 {
                     let x = reg_v.lock().unwrap()[x];
                     let y = reg_v.lock().unwrap()[y];
                     let gfx_position = (x as usize + x_line +
-                                        ((y as usize + y_line as usize) *
-                                         renderer::DISPLAY_WIDTH)) %
+                                        ((y as usize + y_line as usize) * super::DISPLAY_WIDTH)) %
                                        gfx::GFX_MEMORY_SIZE;
                     let current_pixel = reg_gfx.lock().unwrap()[gfx_position as usize];
                     reg_v.lock().unwrap()[0xF] = current_pixel & 0x01;
@@ -330,15 +322,19 @@ impl Chip8 {
                     }
                     0x33 => {
                         let x = reg_v.lock().unwrap()[opcode.x];
-                        self.memory[reg_v.lock().unwrap().reg_i as usize] = x / 100;
-                        self.memory[(reg_v.lock().unwrap().reg_i + 1) as usize] = (x / 10) % 10;
-                        self.memory[(reg_v.lock().unwrap().reg_i + 2) as usize] = x % 100 % 10;
+                        self.memory
+                            .store8(reg_v.lock().unwrap().reg_i as usize, x / 100);
+                        self.memory
+                            .store8((reg_v.lock().unwrap().reg_i + 1) as usize, (x / 10) % 10);
+                        self.memory
+                            .store8((reg_v.lock().unwrap().reg_i + 2) as usize, x % 100 % 10);
                         self.program_counter += 2;
                     }
                     0x55 => {
                         for x in 0..(opcode.x + 1) {
                             let reg_i = reg_v.lock().unwrap().reg_i;
-                            self.memory[reg_i as usize + x] = reg_v.lock().unwrap()[x];
+                            self.memory
+                                .store8(reg_i as usize + x, reg_v.lock().unwrap()[x]);
                         }
 
                         self.program_counter += 2;
@@ -346,7 +342,7 @@ impl Chip8 {
                     0x65 => {
                         for x in 0..(opcode.x + 1) {
                             let reg_i = reg_v.lock().unwrap().reg_i;
-                            reg_v.lock().unwrap()[x] = self.memory[reg_i as usize + x];
+                            reg_v.lock().unwrap()[x] = self.memory.load8(reg_i as usize + x);
                         }
 
                         self.program_counter += 2;
@@ -945,9 +941,9 @@ mod tests {
         chip.reg_v.as_ref().lock().unwrap().reg_i = 0x0500;
         chip.cycle();
 
-        assert_eq!(chip.memory[0x0500], 2);
-        assert_eq!(chip.memory[0x0501], 4);
-        assert_eq!(chip.memory[0x0502], 3);
+        assert_eq!(chip.memory.load8(0x0500), 2);
+        assert_eq!(chip.memory.load8(0x0501), 4);
+        assert_eq!(chip.memory.load8(0x0502), 3);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -964,9 +960,9 @@ mod tests {
         chip.reg_v.as_ref().lock().unwrap().reg_i = 0x500;
         chip.cycle();
 
-        assert_eq!(chip.memory[0x0500], 0x12);
-        assert_eq!(chip.memory[0x0501], 0x34);
-        assert_eq!(chip.memory[0x0502], 0x56);
+        assert_eq!(chip.memory.load8(0x0500), 0x12);
+        assert_eq!(chip.memory.load8(0x0501), 0x34);
+        assert_eq!(chip.memory.load8(0x0502), 0x56);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -977,9 +973,9 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.memory[0x0500] = 0x12;
-        chip.memory[0x0501] = 0x34;
-        chip.memory[0x0502] = 0x56;
+        chip.memory.store8(0x0500, 0x12);
+        chip.memory.store8(0x0501, 0x34);
+        chip.memory.store8(0x0502, 0x56);
         chip.reg_v.as_ref().lock().unwrap().reg_i = 0x500;
         chip.cycle();
 
