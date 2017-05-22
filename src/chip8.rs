@@ -1,48 +1,16 @@
 use super::*;
 
-#[cfg(not(test))]
-use sdl2::pixels;
+use std::sync::{Arc, Mutex, Condvar};
+use std::time::Duration;
 
 use opcode::Opcode;
+use gfx::GfxMemory;
+use register::Register;
+use keyboard::Keyboard;
+use memory::Memory;
 
-#[derive(Debug)]
-pub enum Chip8Error {
-    IntegerOrSdlError,
-    WindowBuildError,
-    Message(String),
-}
-
-impl From<String> for Chip8Error {
-    fn from(msg: String) -> Chip8Error {
-        Chip8Error::Message(msg)
-    }
-}
-
-impl From<sdl2::IntegerOrSdlError> for Chip8Error {
-    fn from(_: sdl2::IntegerOrSdlError) -> Chip8Error {
-        Chip8Error::IntegerOrSdlError
-    }
-}
-
-impl From<sdl2::video::WindowBuildError> for Chip8Error {
-    fn from(_: sdl2::video::WindowBuildError) -> Chip8Error {
-        Chip8Error::WindowBuildError
-    }
-}
-
-#[cfg(not(test))]
-const PIXEL_SIZE: usize = 5;
-const DISPLAY_HEIGHT: usize = 32;
-const DISPLAY_WIDTH: usize = 64;
-const GFX_MEMORY_SIZE: usize = DISPLAY_HEIGHT * DISPLAY_WIDTH;
-const NUM_REGISTERS: usize = 16;
-const MEMORY_SIZE: usize = 4096;
-const STACK_SIZE: usize = 16;
-const NUM_KEYS: usize = 16;
 const PROGRAM_START: usize = 0x200;
 const FONT_SET_SIZE: usize = 80;
-const INSTRUCTIONS_PER_SECOND: i64 = 840;
-const NANO_SECONDS_PER_SECOND: i64 = 1000 * 1000 * 1000;
 const FONT_SET: [u8; FONT_SET_SIZE] =
     [0xF0, 0x90, 0x90, 0x90, 0xF0, 0x20, 0x60, 0x20, 0x20, 0x70, 0xF0, 0x10, 0xF0, 0x80, 0xF0,
      0xF0, 0x10, 0xF0, 0x10, 0xF0, 0x90, 0x90, 0xF0, 0x10, 0x10, 0xF0, 0x80, 0xF0, 0x10, 0xF0,
@@ -52,172 +20,85 @@ const FONT_SET: [u8; FONT_SET_SIZE] =
      0xF0, 0x80, 0xF0, 0x80, 0x80];
 
 pub struct Chip8 {
-    reg_v: [u8; NUM_REGISTERS],
-    reg_gfx: [u8; GFX_MEMORY_SIZE],
-    memory: [u8; MEMORY_SIZE],
-    stack: [u16; STACK_SIZE],
-    keys: [u8; NUM_KEYS],
-    stack_pointer: u16,
+    reg_v: Arc<Mutex<Register>>,
+    reg_gfx: Arc<Mutex<GfxMemory>>,
+    stack: Arc<Mutex<stack::Stack>>,
+    keys: Arc<Mutex<Keyboard>>,
+    memory: Memory,
+
     program_counter: u16,
-    reg_i: u16,
+
     delay_timer: u8,
     sound_timer: u8,
-    refresh: bool,
 }
 
 impl Chip8 {
     pub fn new() -> Chip8 {
+        let gfx = Arc::new(Mutex::new(GfxMemory::new()));
+        let keys = Arc::new(Mutex::new(Keyboard::new()));
         Chip8 {
-            reg_v: [0; NUM_REGISTERS],
-            reg_gfx: [0; GFX_MEMORY_SIZE],
-            memory: [0; MEMORY_SIZE],
-            stack: [0; STACK_SIZE],
-            keys: [0; NUM_KEYS],
-            stack_pointer: 0,
+            stack: Arc::new(Mutex::new(stack::Stack::new())),
+            reg_v: Arc::new(Mutex::new(Register::new())),
+            reg_gfx: gfx.clone(),
+            keys: keys.clone(),
+            memory: Memory::new(),
             program_counter: 0,
-            reg_i: 0,
             delay_timer: 0,
             sound_timer: 0,
-            refresh: true,
         }
     }
 
     pub fn initialize(&mut self) {
+        self.reg_v.as_ref().lock().unwrap().clear();
+        self.reg_gfx.as_ref().lock().unwrap().clear();
         self.program_counter = PROGRAM_START as u16;
-        self.reg_v = [0; NUM_REGISTERS];
-        self.memory = [0; MEMORY_SIZE];
-        self.reg_gfx = [0; GFX_MEMORY_SIZE];
-        self.stack = [0; STACK_SIZE];
-        self.keys = [0; NUM_KEYS];
-        self.stack_pointer = 0;
-        self.reg_i = 0;
-        self.refresh = true;
-        for (index, element) in FONT_SET.into_iter().enumerate() {
-            self.memory[index] = *element;
-        }
+        self.memory.store(0, &FONT_SET);
     }
 
     pub fn load_rom(&mut self, rom: Vec<u8>) {
-        for (index, element) in rom.into_iter().enumerate() {
-            self.memory[index + PROGRAM_START] = element;
-        }
+        self.memory.store(PROGRAM_START, &rom)
     }
 
     #[cfg(not(test))]
-    pub fn run(&mut self) -> Result<(), Chip8Error> {
-        use sdl2::event::Event;
-        use sdl2::keyboard::Keycode;
+    pub fn run(&mut self) -> Result<(), error::Chip8Error> {
+        let gfx = self.reg_gfx.clone();
+        let keys = self.keys.clone();
+        let shutdown = Arc::new((Mutex::new(false), Condvar::new()));
+        let started = Arc::new((Mutex::new(false), Condvar::new()));
+        let render_shutdown = shutdown.clone();
+        let render_started = started.clone();
+        let rendering = std::thread::spawn(move || {
+                                               renderer::Renderer::start(gfx,
+                                                                         keys,
+                                                                         render_shutdown,
+                                                                         render_started);
+                                           });
 
-        let sdl_context = try!(sdl2::init());
-        let video_subsys = try!(sdl_context.video());
-        let window = try!(video_subsys.window("chip8",
-                    (DISPLAY_WIDTH * PIXEL_SIZE) as u32,
-                    (DISPLAY_HEIGHT * PIXEL_SIZE) as u32)
-            .position_centered()
-            .opengl()
-            .build());
-
-        let mut renderer = try!(window.renderer().build());
-        renderer.set_draw_color(pixels::Color::RGB(0, 0, 0));
-        renderer.clear();
-        renderer.present();
-
-        let mut events = try!(sdl_context.event_pump());
-        'main: loop {
-            let start = std::time::Instant::now();
-            for event in events.poll_iter() {
-                match event {
-                    Event::Quit { .. } => break 'main,
-                    Event::KeyDown { keycode: Some(keycode), .. } => {
-                        match keycode {
-                            Keycode::Escape => break 'main,
-                            Keycode::Num1 => self.keys[0x1] = 1,
-                            Keycode::Num2 => self.keys[0x2] = 1,
-                            Keycode::Num3 => self.keys[0x3] = 1,
-                            Keycode::Num4 => self.keys[0xC] = 1,
-                            Keycode::Q => self.keys[0x4] = 1,
-                            Keycode::W => self.keys[0x5] = 1,
-                            Keycode::E => self.keys[0x6] = 1,
-                            Keycode::R => self.keys[0xD] = 1,
-                            Keycode::A => self.keys[0x7] = 1,
-                            Keycode::S => self.keys[0x8] = 1,
-                            Keycode::D => self.keys[0x9] = 1,
-                            Keycode::F => self.keys[0xE] = 1,
-                            Keycode::Y => self.keys[0xA] = 1,
-                            Keycode::X => self.keys[0x0] = 1,
-                            Keycode::C => self.keys[0xB] = 1,
-                            Keycode::V => self.keys[0xF] = 1,
-
-                            _ => {}
-                        }
-                    }
-                    Event::KeyUp { keycode: Some(keycode), .. } => {
-                        match keycode {
-                            Keycode::Escape => break 'main,
-                            Keycode::Num1 => self.keys[0x1] = 0,
-                            Keycode::Num2 => self.keys[0x2] = 0,
-                            Keycode::Num3 => self.keys[0x3] = 0,
-                            Keycode::Num4 => self.keys[0xC] = 0,
-                            Keycode::Q => self.keys[0x4] = 0,
-                            Keycode::W => self.keys[0x5] = 0,
-                            Keycode::E => self.keys[0x6] = 0,
-                            Keycode::R => self.keys[0xD] = 0,
-                            Keycode::A => self.keys[0x7] = 0,
-                            Keycode::S => self.keys[0x8] = 0,
-                            Keycode::D => self.keys[0x9] = 0,
-                            Keycode::F => self.keys[0xE] = 0,
-                            Keycode::Y => self.keys[0xA] = 0,
-                            Keycode::X => self.keys[0x0] = 0,
-                            Keycode::C => self.keys[0xB] = 0,
-                            Keycode::V => self.keys[0xF] = 0,
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                }
+        loop {
+            let &(ref lock, ref condition) = &*started;
+            let start = lock.lock().unwrap();
+            if !*start {
+                let _ = condition
+                    .wait_timeout(start, Duration::from_millis(100))
+                    .unwrap()
+                    .0;
+            } else {
+                break;
             }
+        }
 
+        let &(ref lock, ref condition) = &*shutdown;
+        let mut stopped = lock.lock().unwrap();
+        while !*stopped {
             self.cycle();
-
-            if self.refresh {
-                self.render(&mut renderer);
-                renderer.present();
-                self.refresh = false;
-            }
-
-            let elapsed = start.elapsed();
-            let elapsed_duration = chrono::Duration::from_std(elapsed).unwrap();
-            let cycle_time = chrono::Duration::nanoseconds(NANO_SECONDS_PER_SECOND /
-                                                           INSTRUCTIONS_PER_SECOND);
-            if cycle_time > elapsed_duration {
-                let sleep_time = cycle_time - elapsed_duration;
-                let sleep_duration = sleep_time.to_std().unwrap();
-                std::thread::sleep(sleep_duration);
-            }
+            stopped = condition
+                .wait_timeout(stopped, Duration::new(0, 180))
+                .unwrap()
+                .0;
         }
 
+        try!(rendering.join());
         Ok(())
-    }
-
-    #[cfg(not(test))]
-    fn render(&self, renderer: &mut sdl2::render::Renderer) {
-        for y in 0..DISPLAY_HEIGHT {
-            for x in 0..DISPLAY_WIDTH {
-                let index = (y * DISPLAY_WIDTH) + x;
-                let color = if self.reg_gfx[index] == 0 {
-                    pixels::Color::RGB(0, 0, 0)
-                } else {
-                    pixels::Color::RGB(255, 255, 255)
-                };
-
-                let rectangle = sdl2::rect::Rect::new((x * PIXEL_SIZE) as i32,
-                                                      (y * PIXEL_SIZE) as i32,
-                                                      PIXEL_SIZE as u32,
-                                                      PIXEL_SIZE as u32);
-                renderer.set_draw_color(color);
-                let _ = renderer.fill_rect(rectangle);
-            }
-        }
     }
 
     fn cycle(&mut self) {
@@ -235,49 +116,46 @@ impl Chip8 {
 
     fn fetch_opcode(&self) -> Opcode {
         let index = self.program_counter as usize;
-        let a = self.memory[index] as u16;
-        let b = self.memory[index + 1] as u16;
-        let opcode = (a << 8) + b;
+        let opcode = self.memory.load16(index);
         Opcode::new(opcode)
     }
 
-    fn clear_screen(&mut self) {
-        self.reg_gfx = [0; GFX_MEMORY_SIZE];
-        self.refresh = true;
-    }
-
     fn display(&mut self, x: usize, y: usize, height: u8) {
-        self.reg_v[0xF] = 0x00;
-        self.refresh = true;
+        self.reg_v.as_ref().lock().unwrap()[0xF] = 0x00;
+        let reg_v = self.reg_v.clone();
+        let reg_i = reg_v.lock().unwrap().reg_i;
+        let reg_gfx = self.reg_gfx.clone();
         for y_line in 0..height {
-            let memory_position = (self.reg_i + y_line as u16) as usize;
-            let pixel = self.memory[memory_position];
+            let memory_position = (reg_i + y_line as u16) as usize;
+            let pixel = self.memory.load8(memory_position);
             for x_line in 0..8 {
                 if (pixel & (0x80 >> x_line)) != 0x00 {
-                    let gfx_position = (self.reg_v[x] as usize + x_line +
-                                        ((self.reg_v[y] as usize + y_line as usize) *
-                                         DISPLAY_WIDTH)) %
-                                       GFX_MEMORY_SIZE;
-                    let current_pixel = self.reg_gfx[gfx_position as usize];
-                    self.reg_v[0xF] = current_pixel & 0x01;
+                    let x = reg_v.lock().unwrap()[x];
+                    let y = reg_v.lock().unwrap()[y];
+                    let gfx_position = (x as usize + x_line +
+                                        ((y as usize + y_line as usize) * super::DISPLAY_WIDTH)) %
+                                       gfx::GFX_MEMORY_SIZE;
+                    let current_pixel = reg_gfx.lock().unwrap()[gfx_position as usize];
+                    reg_v.lock().unwrap()[0xF] = current_pixel & 0x01;
 
-                    self.reg_gfx[gfx_position as usize] = !current_pixel;
+                    reg_gfx.lock().unwrap()[gfx_position as usize] = !current_pixel;
                 }
             }
         }
     }
 
     fn execute_opcode(&mut self, opcode: Opcode) {
+        let reg_v = self.reg_v.clone();
+        let reg_gfx = self.reg_gfx.clone();
         match opcode.category {
             0 => {
                 match opcode.byte {
                     0xE0 => {
-                        self.clear_screen();
+                        reg_gfx.lock().unwrap().clear();
                         self.program_counter += 2;
                     }
                     0xEE => {
-                        self.program_counter = self.stack[self.stack_pointer as usize];
-                        self.stack_pointer -= 1;
+                        self.program_counter = self.stack.lock().unwrap().pop();
                         self.program_counter += 2;
                     }
                     _ => {}
@@ -285,108 +163,118 @@ impl Chip8 {
             }
             1 => self.program_counter = opcode.address,
             2 => {
-                self.stack_pointer += 1;
-                self.stack[self.stack_pointer as usize] = self.program_counter;
+                self.stack.lock().unwrap().push(self.program_counter);
                 self.program_counter = opcode.address;
             }
             3 => {
-                if self.reg_v[opcode.x] == opcode.byte {
+                if reg_v.lock().unwrap()[opcode.x] == opcode.byte {
                     self.program_counter += 4;
                 } else {
                     self.program_counter += 2;
                 }
             }
             4 => {
-                if self.reg_v[opcode.x] != opcode.byte {
+                if reg_v.lock().unwrap()[opcode.x] != opcode.byte {
                     self.program_counter += 4;
                 } else {
                     self.program_counter += 2;
                 }
             }
             5 => {
-                if self.reg_v[opcode.x] == self.reg_v[opcode.y] {
+                let x = reg_v.lock().unwrap()[opcode.x];
+                let y = reg_v.lock().unwrap()[opcode.y];
+                if x == y {
                     self.program_counter += 4;
                 } else {
                     self.program_counter += 2;
                 }
             }
             6 => {
-                self.reg_v[opcode.x] = opcode.byte;
+                reg_v.lock().unwrap()[opcode.x] = opcode.byte;
                 self.program_counter += 2;
             }
             7 => {
-                self.reg_v[opcode.x] = self.reg_v[opcode.x].wrapping_add(opcode.byte);
+                let x = reg_v.lock().unwrap()[opcode.x];
+                reg_v.lock().unwrap()[opcode.x] = x.wrapping_add(opcode.byte);
                 self.program_counter += 2;
             }
             8 => {
                 match opcode.nibble {
                     0 => {
-                        self.reg_v[opcode.x] = self.reg_v[opcode.y];
+                        let y = reg_v.lock().unwrap()[opcode.y];
+                        reg_v.lock().unwrap()[opcode.x] = y;
                         self.program_counter += 2;
                     }
                     1 => {
-                        self.reg_v[opcode.x] |= self.reg_v[opcode.y];
+                        let y = reg_v.lock().unwrap()[opcode.y];
+                        reg_v.lock().unwrap()[opcode.x] |= y;
                         self.program_counter += 2;
                     }
                     2 => {
-                        self.reg_v[opcode.x] &= self.reg_v[opcode.y];
+                        let y = reg_v.lock().unwrap()[opcode.y];
+                        reg_v.lock().unwrap()[opcode.x] &= y;
                         self.program_counter += 2;
                     }
                     3 => {
-                        self.reg_v[opcode.x] ^= self.reg_v[opcode.y];
+                        let y = reg_v.lock().unwrap()[opcode.y];
+                        reg_v.lock().unwrap()[opcode.x] ^= y;
                         self.program_counter += 2;
                     }
                     4 => {
-                        let x = self.reg_v[opcode.x];
-                        let y = self.reg_v[opcode.y];
-                        self.reg_v[0xF] = ((x as u16 + y as u16) > 0xFF) as u8;
+                        let x = reg_v.lock().unwrap()[opcode.x];
+                        let y = reg_v.lock().unwrap()[opcode.y];
+                        reg_v.lock().unwrap()[0xF] = ((x as u16 + y as u16) > 0xFF) as u8;
 
-                        self.reg_v[opcode.x] = x.wrapping_add(y);
+                        reg_v.lock().unwrap()[opcode.x] = x.wrapping_add(y);
                         self.program_counter += 2;
                     }
                     5 => {
-                        let x = self.reg_v[opcode.x];
-                        let y = self.reg_v[opcode.y];
-                        self.reg_v[0xF] = (x >= y) as u8;
-                        self.reg_v[opcode.x] = x.wrapping_sub(y);
+                        let x = reg_v.lock().unwrap()[opcode.x];
+                        let y = reg_v.lock().unwrap()[opcode.y];
+                        reg_v.lock().unwrap()[0xF] = (x >= y) as u8;
+                        reg_v.lock().unwrap()[opcode.x] = x.wrapping_sub(y);
                         self.program_counter += 2;
                     }
                     6 => {
-                        self.reg_v[0xF] = self.reg_v[opcode.x] & 0x01;
-                        self.reg_v[opcode.x] >>= 1;
+                        let carry = reg_v.lock().unwrap()[opcode.x] & 0x01;
+                        reg_v.lock().unwrap()[0xF] = carry;
+                        reg_v.lock().unwrap()[opcode.x] >>= 1;
                         self.program_counter += 2;
                     }
                     7 => {
-                        let x = self.reg_v[opcode.x];
-                        let y = self.reg_v[opcode.y];
-                        self.reg_v[0xF] = (y >= x) as u8;
-                        self.reg_v[opcode.x] = y.wrapping_sub(x);
+                        let x = reg_v.lock().unwrap()[opcode.x];
+                        let y = reg_v.lock().unwrap()[opcode.y];
+                        reg_v.lock().unwrap()[0xF] = (y >= x) as u8;
+                        reg_v.lock().unwrap()[opcode.x] = y.wrapping_sub(x);
                         self.program_counter += 2;
                     }
                     0xE => {
-                        self.reg_v[0xF] = (self.reg_v[opcode.x] & 0x80) >> 7;
-                        self.reg_v[opcode.x] <<= 1;
+                        let carry = (reg_v.lock().unwrap()[opcode.x] & 0x80) >> 7;
+                        reg_v.lock().unwrap()[0xF] = carry;
+                        reg_v.lock().unwrap()[opcode.x] <<= 1;
                         self.program_counter += 2;
                     }
                     _ => {}
                 }
             }
             9 => {
-                if self.reg_v[opcode.x] != self.reg_v[opcode.y] {
+                let x = reg_v.lock().unwrap()[opcode.x];
+                let y = reg_v.lock().unwrap()[opcode.y];
+                if x != y {
                     self.program_counter += 4;
                 } else {
                     self.program_counter += 2;
                 }
             }
             0xA => {
-                self.reg_i = opcode.address;
+                reg_v.lock().unwrap().reg_i = opcode.address;
                 self.program_counter += 2;
             }
             0xB => {
-                self.program_counter = opcode.address + self.reg_v[0] as u16;
+                self.program_counter = opcode.address + reg_v.lock().unwrap()[0] as u16;
             }
             0xC => {
-                self.reg_v[opcode.x] = rand::random::<u8>() & opcode.byte;
+                reg_v.lock().unwrap()[opcode.x] = rand::random::<u8>() & opcode.byte;
                 self.program_counter += 2;
             }
             0xD => {
@@ -396,14 +284,16 @@ impl Chip8 {
             0xE => {
                 match opcode.byte {
                     0x9E => {
-                        if self.keys[self.reg_v[opcode.x] as usize] != 0 {
+                        if self.keys.lock().unwrap()[reg_v.lock().unwrap()[opcode.x] as usize] !=
+                           0 {
                             self.program_counter += 4;
                         } else {
                             self.program_counter += 2;
                         }
                     }
                     0xA1 => {
-                        if self.keys[self.reg_v[opcode.x] as usize] == 0 {
+                        if self.keys.lock().unwrap()[reg_v.lock().unwrap()[opcode.x] as usize] ==
+                           0 {
                             self.program_counter += 4;
                         } else {
                             self.program_counter += 2;
@@ -415,58 +305,67 @@ impl Chip8 {
             0xF => {
                 match opcode.byte {
                     0x07 => {
-                        self.reg_v[opcode.x] = self.delay_timer;
+                        reg_v.lock().unwrap()[opcode.x] = self.delay_timer;
                         self.program_counter += 2;
                     }
                     0x0A => {
-                        for index in 0..NUM_KEYS {
-                            if self.keys[index] != 0x00 {
-                                self.reg_v[opcode.x] = index as u8;
+                        for index in 0..keyboard::NUM_KEYS {
+                            if self.keys.lock().unwrap()[index] != 0x00 {
+                                reg_v.lock().unwrap()[opcode.x] = index as u8;
                                 self.program_counter += 2;
                                 break;
                             }
                         }
                     }
                     0x15 => {
-                        self.delay_timer = self.reg_v[opcode.x];
+                        self.delay_timer = reg_v.lock().unwrap()[opcode.x];
                         self.program_counter += 2;
                     }
                     0x18 => {
-                        self.sound_timer = self.reg_v[opcode.x];
+                        self.sound_timer = reg_v.lock().unwrap()[opcode.x];
                         self.program_counter += 2;
                     }
                     0x1E => {
-                        let i = self.reg_i + self.reg_v[opcode.x] as u16;
+                        let reg_i = reg_v.lock().unwrap().reg_i;
+                        let x = reg_v.lock().unwrap()[opcode.x];
+                        let i = reg_i + x as u16;
                         if i > 0xFFF {
-                            self.reg_v[0xF] = 1;
+                            reg_v.lock().unwrap()[0xF] = 1;
                         } else {
-                            self.reg_v[0xF] = 0;
+                            reg_v.lock().unwrap()[0xF] = 0;
                         }
 
-                        self.reg_i = i;
+                        reg_v.lock().unwrap().reg_i = i;
                         self.program_counter += 2;
                     }
                     0x29 => {
-                        self.reg_i = self.reg_v[opcode.x] as u16 * 0x5;
+                        let x = reg_v.lock().unwrap()[opcode.x];
+                        reg_v.lock().unwrap().reg_i = x as u16 * 0x5;
                         self.program_counter += 2;
                     }
                     0x33 => {
-                        let x = self.reg_v[opcode.x];
-                        self.memory[self.reg_i as usize] = x / 100;
-                        self.memory[(self.reg_i + 1) as usize] = (x / 10) % 10;
-                        self.memory[(self.reg_i + 2) as usize] = x % 100 % 10;
+                        let x = reg_v.lock().unwrap()[opcode.x];
+                        self.memory
+                            .store8(reg_v.lock().unwrap().reg_i as usize, x / 100);
+                        self.memory
+                            .store8((reg_v.lock().unwrap().reg_i + 1) as usize, (x / 10) % 10);
+                        self.memory
+                            .store8((reg_v.lock().unwrap().reg_i + 2) as usize, x % 100 % 10);
                         self.program_counter += 2;
                     }
                     0x55 => {
                         for x in 0..(opcode.x + 1) {
-                            self.memory[self.reg_i as usize + x] = self.reg_v[x];
+                            let reg_i = reg_v.lock().unwrap().reg_i;
+                            self.memory
+                                .store8(reg_i as usize + x, reg_v.lock().unwrap()[x]);
                         }
 
                         self.program_counter += 2;
                     }
                     0x65 => {
                         for x in 0..(opcode.x + 1) {
-                            self.reg_v[x] = self.memory[self.reg_i as usize + x];
+                            let reg_i = reg_v.lock().unwrap().reg_i;
+                            reg_v.lock().unwrap()[x] = self.memory.load8(reg_i as usize + x);
                         }
 
                         self.program_counter += 2;
@@ -506,8 +405,8 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x02FC);
-        assert_eq!(chip.stack_pointer, 0x0001);
-        assert_eq!(chip.stack[chip.stack_pointer as usize], 0x200);
+        assert_eq!(chip.stack.lock().unwrap().get_pointer(), 0x0001);
+        assert_eq!(chip.stack.lock().unwrap().current(), 0x200);
     }
 
     #[test]
@@ -521,7 +420,7 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.stack_pointer, 0x0000);
+        assert_eq!(chip.stack.lock().unwrap().get_pointer(), 0x0000);
     }
 
     #[test]
@@ -543,7 +442,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0204);
@@ -556,7 +455,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x14;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
@@ -569,7 +468,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x14;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0204);
@@ -582,7 +481,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
@@ -595,8 +494,8 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x14;
-        chip.reg_v[1] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x14;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0204);
@@ -609,8 +508,8 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x14;
-        chip.reg_v[1] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
@@ -626,7 +525,7 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x15);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x15);
     }
 
     #[test]
@@ -636,11 +535,11 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x25);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x25);
     }
 
     #[test]
@@ -650,11 +549,11 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[1] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x15);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x15);
     }
 
     #[test]
@@ -664,12 +563,12 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x0F;
-        chip.reg_v[1] = 0xF0;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x0F;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0xF0;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0xFF);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0xFF);
     }
 
     #[test]
@@ -679,12 +578,12 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x0F;
-        chip.reg_v[1] = 0xF0;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x0F;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0xF0;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x00);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x00);
     }
 
     #[test]
@@ -694,12 +593,12 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x15;
-        chip.reg_v[1] = 0x35;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x35;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x20);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x20);
     }
 
     #[test]
@@ -709,13 +608,13 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0xA5;
-        chip.reg_v[1] = 0xA5;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0xA5;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0xA5;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x4A);
-        assert_eq!(chip.reg_v[0xF], 0x01);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x4A);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x01);
     }
 
     #[test]
@@ -725,13 +624,13 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x15;
-        chip.reg_v[1] = 0x10;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x10;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x25);
-        assert_eq!(chip.reg_v[0xF], 0x0);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x25);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x0);
     }
 
     #[test]
@@ -741,13 +640,13 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x10;
-        chip.reg_v[1] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x10;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0xFB);
-        assert_eq!(chip.reg_v[0xF], 0x00);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0xFB);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x00);
     }
 
     #[test]
@@ -757,13 +656,13 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x15;
-        chip.reg_v[1] = 0x10;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x10;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x05);
-        assert_eq!(chip.reg_v[0xF], 0x1);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x05);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x1);
     }
 
     #[test]
@@ -773,12 +672,12 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x01;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x01;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x00);
-        assert_eq!(chip.reg_v[0xF], 0x01);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x00);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x01);
     }
 
     #[test]
@@ -788,12 +687,12 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x02;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x02;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x01);
-        assert_eq!(chip.reg_v[0xF], 0x0);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x01);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x0);
     }
 
     #[test]
@@ -803,13 +702,13 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x15;
-        chip.reg_v[1] = 0x10;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x10;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0xFB);
-        assert_eq!(chip.reg_v[0xF], 0x00);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0xFB);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x00);
     }
 
     #[test]
@@ -819,13 +718,13 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x10;
-        chip.reg_v[1] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x10;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x05);
-        assert_eq!(chip.reg_v[0xF], 0x01);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x05);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x01);
     }
 
     #[test]
@@ -835,12 +734,12 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x80;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x80;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x00);
-        assert_eq!(chip.reg_v[0xF], 0x01);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x00);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x01);
     }
 
     #[test]
@@ -850,12 +749,12 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x01;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x01;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_v[0], 0x02);
-        assert_eq!(chip.reg_v[0xF], 0x0);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x02);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0xF], 0x0);
     }
 
     #[test]
@@ -865,8 +764,8 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x14;
-        chip.reg_v[1] = 0x15;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x15;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0204);
@@ -879,8 +778,8 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x14;
-        chip.reg_v[1] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x14;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x14;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
@@ -896,7 +795,7 @@ mod tests {
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_i, 0x0123);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap().reg_i, 0x0123);
     }
 
     #[test]
@@ -906,7 +805,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x10;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x10;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0133);
@@ -919,8 +818,8 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x3;
-        chip.keys[3] = 0x1;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x3;
+        chip.keys.as_ref().lock().unwrap()[3] = 0x1;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0204);
@@ -933,7 +832,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x3;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x3;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
@@ -946,7 +845,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x3;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x3;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0204);
@@ -959,8 +858,8 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x3;
-        chip.keys[3] = 0x1;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x3;
+        chip.keys.as_ref().lock().unwrap()[3] = 0x1;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
@@ -976,7 +875,7 @@ mod tests {
         chip.delay_timer = 0x12;
         chip.cycle();
 
-        assert_eq!(chip.reg_v[0], 0x12);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x12);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -991,10 +890,10 @@ mod tests {
         chip.cycle();
         assert_eq!(chip.program_counter, 0x0200);
 
-        chip.keys[5] = 0x1;
+        chip.keys.as_ref().lock().unwrap()[5] = 0x1;
         chip.cycle();
 
-        assert_eq!(chip.reg_v[0], 0x05);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x05);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -1005,7 +904,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x12;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x12;
         chip.cycle();
 
         assert_eq!(chip.delay_timer, 0x11);
@@ -1019,7 +918,7 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x12;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x12;
         chip.cycle();
 
         assert_eq!(chip.sound_timer, 0x11);
@@ -1033,10 +932,10 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x12;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x12;
         chip.cycle();
 
-        assert_eq!(chip.reg_i, 0x0012);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap().reg_i, 0x0012);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -1047,10 +946,10 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x1;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x1;
         chip.cycle();
 
-        assert_eq!(chip.reg_i, 0x0005);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap().reg_i, 0x0005);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -1061,13 +960,13 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0xF3;
-        chip.reg_i = 0x0500;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0xF3;
+        chip.reg_v.as_ref().lock().unwrap().reg_i = 0x0500;
         chip.cycle();
 
-        assert_eq!(chip.memory[0x0500], 2);
-        assert_eq!(chip.memory[0x0501], 4);
-        assert_eq!(chip.memory[0x0502], 3);
+        assert_eq!(chip.memory.load8(0x0500), 2);
+        assert_eq!(chip.memory.load8(0x0501), 4);
+        assert_eq!(chip.memory.load8(0x0502), 3);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -1078,15 +977,15 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_v[0] = 0x12;
-        chip.reg_v[1] = 0x34;
-        chip.reg_v[2] = 0x56;
-        chip.reg_i = 0x500;
+        chip.reg_v.as_ref().lock().unwrap()[0] = 0x12;
+        chip.reg_v.as_ref().lock().unwrap()[1] = 0x34;
+        chip.reg_v.as_ref().lock().unwrap()[2] = 0x56;
+        chip.reg_v.as_ref().lock().unwrap().reg_i = 0x500;
         chip.cycle();
 
-        assert_eq!(chip.memory[0x0500], 0x12);
-        assert_eq!(chip.memory[0x0501], 0x34);
-        assert_eq!(chip.memory[0x0502], 0x56);
+        assert_eq!(chip.memory.load8(0x0500), 0x12);
+        assert_eq!(chip.memory.load8(0x0501), 0x34);
+        assert_eq!(chip.memory.load8(0x0502), 0x56);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -1097,15 +996,15 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.memory[0x0500] = 0x12;
-        chip.memory[0x0501] = 0x34;
-        chip.memory[0x0502] = 0x56;
-        chip.reg_i = 0x500;
+        chip.memory.store8(0x0500, 0x12);
+        chip.memory.store8(0x0501, 0x34);
+        chip.memory.store8(0x0502, 0x56);
+        chip.reg_v.as_ref().lock().unwrap().reg_i = 0x500;
         chip.cycle();
 
-        assert_eq!(chip.reg_v[0], 0x12);
-        assert_eq!(chip.reg_v[1], 0x34);
-        assert_eq!(chip.reg_v[2], 0x56);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[0], 0x12);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[1], 0x34);
+        assert_eq!(chip.reg_v.as_ref().lock().unwrap()[2], 0x56);
         assert_eq!(chip.program_counter, 0x0202);
     }
 
@@ -1116,26 +1015,27 @@ mod tests {
         let mut chip = Chip8::new();
         chip.initialize();
         chip.load_rom(rom);
-        chip.reg_i = 0x0000;
+        chip.reg_v.as_ref().lock().unwrap().reg_i = 0x0000;
         chip.cycle();
 
         assert_eq!(chip.program_counter, 0x0202);
-        assert_eq!(chip.reg_gfx[0], 0xFF);
-        assert_eq!(chip.reg_gfx[1], 0xFF);
-        assert_eq!(chip.reg_gfx[2], 0xFF);
-        assert_eq!(chip.reg_gfx[3], 0xFF);
-        assert_eq!(chip.reg_gfx[4], 0x00);
-        assert_eq!(chip.reg_gfx[5], 0x00);
-        assert_eq!(chip.reg_gfx[6], 0x00);
-        assert_eq!(chip.reg_gfx[7], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[0], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[1], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[2], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[3], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[4], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[5], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[6], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[7], 0x00);
 
-        assert_eq!(chip.reg_gfx[64 + 0], 0xFF);
-        assert_eq!(chip.reg_gfx[64 + 1], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 2], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 3], 0xFF);
-        assert_eq!(chip.reg_gfx[64 + 4], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 5], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 6], 0x00);
-        assert_eq!(chip.reg_gfx[64 + 7], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 0], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 1], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 2], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 3], 0xFF);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 4], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 5], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 6], 0x00);
+        assert_eq!(chip.reg_gfx.as_ref().lock().unwrap()[64 + 7], 0x00);
     }
 }
+

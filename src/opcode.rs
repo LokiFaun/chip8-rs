@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug)]
 pub struct Opcode {
     opcode: u16,
@@ -7,6 +9,12 @@ pub struct Opcode {
     pub category: u8,
     pub byte: u8,
     pub nibble: u8,
+}
+
+impl fmt::Display for Opcode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:X}", self.opcode)
+    }
 }
 
 impl Opcode {
