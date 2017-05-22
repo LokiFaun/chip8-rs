@@ -1,6 +1,7 @@
 use super::*;
 
 use std::sync::{Arc, Mutex, Condvar};
+use std::time::Duration;
 
 use opcode::Opcode;
 use gfx::GfxMemory;
@@ -25,8 +26,6 @@ pub struct Chip8 {
     keys: Arc<Mutex<Keyboard>>,
     memory: Memory,
 
-    shutdown: Arc<(Mutex<bool>, Condvar)>,
-
     program_counter: u16,
 
     delay_timer: u8,
@@ -35,14 +34,12 @@ pub struct Chip8 {
 
 impl Chip8 {
     pub fn new() -> Chip8 {
-        let shutdown = Arc::new((Mutex::new(false), Condvar::new()));
         let gfx = Arc::new(Mutex::new(GfxMemory::new()));
         let keys = Arc::new(Mutex::new(Keyboard::new()));
         Chip8 {
             stack: Arc::new(Mutex::new(stack::Stack::new())),
             reg_v: Arc::new(Mutex::new(Register::new())),
             reg_gfx: gfx.clone(),
-            shutdown: shutdown.clone(),
             keys: keys.clone(),
             memory: Memory::new(),
             program_counter: 0,
@@ -66,15 +63,41 @@ impl Chip8 {
     pub fn run(&mut self) -> Result<(), error::Chip8Error> {
         let gfx = self.reg_gfx.clone();
         let keys = self.keys.clone();
-        let rendering = std::thread::spawn(move || { renderer::Renderer::start(gfx, keys); });
+        let shutdown = Arc::new((Mutex::new(false), Condvar::new()));
+        let started = Arc::new((Mutex::new(false), Condvar::new()));
+        let render_shutdown = shutdown.clone();
+        let render_started = started.clone();
+        let rendering = std::thread::spawn(move || {
+                                               renderer::Renderer::start(gfx,
+                                                                         keys,
+                                                                         render_shutdown,
+                                                                         render_started);
+                                           });
 
-        self.cycle();
+        loop {
+            let &(ref lock, ref condition) = &*started;
+            let start = lock.lock().unwrap();
+            if !*start {
+                let _ = condition
+                    .wait_timeout(start, Duration::from_millis(100))
+                    .unwrap()
+                    .0;
+            } else {
+                break;
+            }
+        }
+
+        let &(ref lock, ref condition) = &*shutdown;
+        let mut stopped = lock.lock().unwrap();
+        while !*stopped {
+            self.cycle();
+            stopped = condition
+                .wait_timeout(stopped, Duration::new(0, 180))
+                .unwrap()
+                .0;
+        }
 
         try!(rendering.join());
-        let &(ref lock, ref condition) = &*self.shutdown;
-        let mut stopped = lock.lock().unwrap();
-        *stopped = true;
-        condition.notify_all();
         Ok(())
     }
 

@@ -1,6 +1,6 @@
 use super::*;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Condvar};
 
 use gfx::GfxMemory;
 use keyboard::Keyboard;
@@ -11,18 +11,29 @@ const PIXEL_SIZE: usize = 20;
 pub struct Renderer {
     gfx: Arc<Mutex<GfxMemory>>,
     keys: Arc<Mutex<Keyboard>>,
+    shutdown: Arc<(Mutex<bool>, Condvar)>,
+    started: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl Renderer {
-    pub fn new(gfx: Arc<Mutex<GfxMemory>>, keyboard: Arc<Mutex<Keyboard>>) -> Renderer {
+    pub fn new(gfx: Arc<Mutex<GfxMemory>>,
+               keyboard: Arc<Mutex<Keyboard>>,
+               shutdown: Arc<(Mutex<bool>, Condvar)>,
+               started: Arc<(Mutex<bool>, Condvar)>)
+               -> Renderer {
         Renderer {
             gfx: gfx,
             keys: keyboard,
+            shutdown: shutdown,
+            started: started,
         }
     }
 
-    pub fn start(gfx: Arc<Mutex<GfxMemory>>, keyboard: Arc<Mutex<Keyboard>>) {
-        let renderer = Renderer::new(gfx, keyboard);
+    pub fn start(gfx: Arc<Mutex<GfxMemory>>,
+                 keyboard: Arc<Mutex<Keyboard>>,
+                 shutdown: Arc<(Mutex<bool>, Condvar)>,
+                 started: Arc<(Mutex<bool>, Condvar)>) {
+        let renderer = Renderer::new(gfx, keyboard, shutdown, started);
         if let Err(err) = renderer.run() {
             match err {
                 error::Chip8Error::Message(msg) => {
@@ -54,6 +65,13 @@ impl Renderer {
         renderer.clear();
         renderer.present();
 
+        let &(ref lock, ref condition) = &*self.started;
+        {
+            let mut start = lock.lock().unwrap();
+            *start = true;
+            condition.notify_all();
+        }
+
         let mut events = try!(sdl_context.event_pump());
         'main: loop {
             for event in events.poll_iter() {
@@ -79,6 +97,10 @@ impl Renderer {
             renderer.present();
         }
 
+        let &(ref lock, ref condition) = &*self.shutdown;
+        let mut stopped = lock.lock().unwrap();
+        *stopped = true;
+        condition.notify_all();
         Ok(())
     }
 
